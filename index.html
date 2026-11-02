@@ -522,8 +522,17 @@ const ARMOR_TYPES = {
   helmet: { slot: '兜' },
   chest: { slot: '胸' },
   legs: { slot: '脚' },
-  shoes: { slot: '靴' }
+  shoes: { slot: '靴' },
 };
+// 防具のキーのみを取得
+const SLOT_KEYS = Object.keys(ARMOR_TYPES); // ['helmet', 'chest', 'legs', 'shoes']
+
+// EQUIPPED には防具 + sub_weapon をそれぞれ初期化
+const EQUIPPED = {
+  ...Object.fromEntries(SLOT_KEYS.map(s => [s, null])),
+  sub_weapon: null // サブ武器枠
+};
+// const PACK_COLS = 5, PACK_ROWS = 4, SLOT_ORDER = ['weapon', 'sub_weapon', ...SLOT_KEYS.filter(k => k !== 'sub_weapon'), 'artifact'];
 
 const ARMOR_VARIATIONS = {
   helmet: [
@@ -575,10 +584,10 @@ const ARMOR_BASE_STATS = {
   shoes:  { hp: 8,  red: 0.015 }
 };
 
-const SLOT_KEYS = Object.keys(ARMOR_TYPES);
+// const SLOT_KEYS = Object.keys(ARMOR_TYPES);
 const TIERS = [{ mult: 1 }, { mult: 1.7 }, { mult: 2.5 }, { mult: 3.5 }];
 const ARMOR_ROLL = [0.8, 1.2], RED_CAP = 0.6, DROP_RATE = 0.2, FLOORS_PER_TIER = 3;
-const EQUIPPED = Object.fromEntries(SLOT_KEYS.map(s => [s, null]));
+// const EQUIPPED = Object.fromEntries(SLOT_KEYS.map(s => [s, null]));
 const randomSlot = () => SLOT_KEYS[Math.floor(Math.random() * SLOT_KEYS.length)];
 const tierFor = floor => Math.min(TIERS.length - 1, Math.floor((Math.max(1, floor) - 1) / FLOORS_PER_TIER) + (Math.random() < 0.15 ? 1 : 0));
 
@@ -601,23 +610,33 @@ const rollArmor = (slot, floor) => {
 
 const armorStats = () => {
   let hp = 0, red = 0;
-  for (const it of Object.values(EQUIPPED)) if (it && it.dur > 0) { hp += it.hp; red += it.red; }
-  
-  // 軽減率が上限を超えている場合、超えた分（1% = 0.01につきHP+1）をHP加算に変換
+  // 防具のキー(SLOT_KEYS)のみを対象にして計算する
+  for (const key of SLOT_KEYS) {
+    const it = EQUIPPED[key];
+    if (it && it.dur > 0) { 
+      hp += (it.hp || 0); 
+      red += (it.red || 0); 
+    }
+  }
+
+  // 軽減率が上限(60%)を超えている場合の変換処理
   if (red > RED_CAP) {
-    const excessPct = Math.floor((red - RED_CAP) * 100); // 超過分のパーセンテージ（例: 0.65 -> 5%）
-    hp += excessPct; // 1%につきHP+1
-    red = RED_CAP;   // 軽減率は上限（60%）に固定
+    const excessPct = Math.floor((red - RED_CAP) * 100);
+    hp += excessPct;
+    red = RED_CAP;
   }
 
   return { hp, red };
 };
+
 const armorScore = it => it.hp + it.red * 500;
 const takeDamage = d => Math.max(1, Math.round(d * (1 - armorStats().red)));
 const plus = it => it.lv ? `+${it.lv}` : '';
 const armorLabel = it => `${it.label}${plus(it)}(HP+${it.hp} 軽減${(it.red * 100).toFixed(1)}%)`;
 
-const PACK_COLS = 5, PACK_ROWS = 4, SLOT_ORDER = ['weapon', ...SLOT_KEYS, 'artifact'];
+const PACK_COLS = 5, PACK_ROWS = 4;
+// ★ sub_weapon を含めた新しい SLOT_ORDER
+const SLOT_ORDER = ['weapon', 'sub_weapon', ...SLOT_KEYS.filter(k => k !== 'sub_weapon'), 'artifact'];
 const BACKPACK = Array(PACK_COLS * PACK_ROWS).fill(null);
 const STORAGE = Array(PACK_COLS * PACK_ROWS).fill(null);
 BACKPACK[0] = rollWeapon('dual'); BACKPACK[1] = rollWeapon('bow'); BACKPACK[2] = rollWeapon('greatsword'); BACKPACK[3] = rollWeapon('spear');
@@ -657,7 +676,7 @@ const wear = (it, n) => {
   it.dur = Math.max(0, it.dur - n);
   return it.dur === 0;
 };
-const wearArmor = n => Object.values(EQUIPPED).filter(it => wear(it, n));
+const wearArmor = n => SLOT_KEYS.map(k => EQUIPPED[k]).filter(it => it && wear(it, n));
 
 const spendGold = n => { if (PLAYER.gold < n) return false; PLAYER.gold -= n; return true; };
 const buyPotion = kind => { if (!spendGold(POTION_DEF[kind].price)) return false; POTIONS[kind]++; return true; };
@@ -959,11 +978,7 @@ class Main extends Phaser.Scene {
         }
       });
     }
-    // ★ 15階以上なら超高HP（22倍）、それ未満なら通常のボスHP倍率（6倍）を適用
-    /*if (isSub(this.floor)) {
-  const hpMult = (this.floor >= 15 || isTenFloor(this.floor)) ? BOSS.hpMultSpecial : BOSS.hpMult;
-  this.boss = this.spawnEnemy(this.stairs.x, this.stairs.y, Math.round(eh * hpMult), BOSS, true);
-}*/
+    
     // 〇 修正後のコード
     if (isSub(this.floor)) {
       const hpMult = isTenFloor(this.floor) ? BOSS.hpMultSpecial : BOSS.hpMult;
@@ -1049,24 +1064,6 @@ class Main extends Phaser.Scene {
       onComplete: () => flash.destroy()
     });
   }
-  /*muzzleFlash(x, y, ang, color = 0xffe08a) {
-    const flash = this.add.graphics().setDepth(3);
-    flash.fillStyle(color, 0.9).beginPath().moveTo(x, y);
-    const spread = Math.PI * 0.35;
-    const len = 24;
-    flash.lineTo(x + Math.cos(ang - spread) * len, y + Math.sin(ang - spread) * len);
-    flash.lineTo(x + Math.cos(ang) * (len * 1.4), y + Math.sin(ang) * (len * 1.4));
-    flash.lineTo(x + Math.cos(ang + spread) * len, y + Math.sin(ang + spread) * len);
-    flash.closePath().fillPath();
-
-    this.tweens.add({
-      targets: flash,
-      alpha: 0,
-      scale: 1.3,
-      duration: 90,
-      onComplete: () => flash.destroy()
-    });
-  }*/
 
   setupPlayer() {
     const r0 = rooms[0];
@@ -1085,7 +1082,7 @@ class Main extends Phaser.Scene {
     this.keys = this.input.keyboard.addKeys({
       up: 'W', down: 'S', left: 'A', right: 'D',
       up2: 'UP', down2: 'DOWN', left2: 'LEFT', right2: 'RIGHT',
-      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', bossWeapon1: 'ONE', bossWeapon2: 'TWO', bossWeapon3: 'THREE', bossWeapon4: 'FOUR'
+      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', swap: 'X', bossWeapon1: 'ONE', bossWeapon2: 'TWO', bossWeapon3: 'THREE', bossWeapon4: 'FOUR'
     });
     
     this.input.on('pointerdown', () => this.attack());
@@ -1184,6 +1181,8 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon2)) this.obtainBossWeapon('eruption_wand');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon3)) this.obtainBossWeapon('dragon_chain');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');
+    // Xキーで武器切り替え
+    if (Phaser.Input.Keyboard.JustDown(k.swap)) this.swapWeapon();
 
     if (Phaser.Input.Keyboard.JustDown(k.subSkill)) this.subSkill();
     if (Phaser.Input.Keyboard.JustDown(k.potF)) this.usePotion('full');
@@ -1772,6 +1771,24 @@ class Main extends Phaser.Scene {
     f.closePath().fillPath().strokePath();
     this.time.delayedCall(130, () => f.destroy());
   }
+  swapWeapon() {
+  if (this.leaving || this.dodge) return;
+  
+  // サブ武器が未装備の場合は切り替え不可（またはメッセージ表示）
+  if (!EQUIPPED.sub_weapon) {
+    return this.popup('サブ武器が装備されていません', '#a0a7b8');
+  }
+
+  // メイン武器とサブ武器を入れ替え
+  const temp = weapon;
+  weapon = EQUIPPED.sub_weapon;
+  EQUIPPED.sub_weapon = temp;
+
+  // 持ち替え演出とクールダウンの適正化
+  this.nextAtk = this.time.now + 200; // 持ち替え後の隙（200ms）
+  this.floatText(this.p.x, this.p.y - 30, `⇄ ${weapon.name}`, '#ffd36a', '16px', 800);
+  saveGame();
+}
 }
 
 class HudScene extends Phaser.Scene {
@@ -1824,8 +1841,8 @@ class HudScene extends Phaser.Scene {
 
     // 画面左下の装備情報用テキストコンテナ
     this.equipTexts = [];
-    for (let i = 0; i < 6; i++) {
-      const t = this.add.text(20, h - 145 + i * 22, '', { 
+    for (let i = 0; i < 7; i++) {
+      const t = this.add.text(20, h - 165 + i * 22, '', { 
         fontFamily: 'system-ui, sans-serif', 
         fontSize: '11px', 
         color: '#e8eaf0' 
@@ -1965,6 +1982,7 @@ class HudScene extends Phaser.Scene {
     // ==========================================
     const eqList = [
       { label: '武器', item: weapon },
+      { label: '副武', item: EQUIPPED.sub_weapon },
       { label: '兜',   item: EQUIPPED.helmet },
       { label: '胸',   item: EQUIPPED.chest },
       { label: '脚',   item: EQUIPPED.legs },
@@ -1973,9 +1991,9 @@ class HudScene extends Phaser.Scene {
     ];
 
     const eqPanelX = 10;
-    const eqPanelY = h - 155;
+    const eqPanelY = h - 175;
     const eqPanelW = 210;
-    const eqPanelH = 145;
+    const eqPanelH = 165;
 
     this.uiGfx.fillStyle(0x0e1015, 0.85);
     this.uiGfx.fillRoundedRect(eqPanelX, eqPanelY, eqPanelW, eqPanelH, 6);
@@ -2173,6 +2191,7 @@ const itemChar = it => {
   if (it.slot === 'weapon' || isArtifact(it)) {
     return it.name ? it.name[0] : '?';
   }
+  if (it.slot === 'sub_weapon') return '副'; // サブ武器アイコン
   return (ARMOR_TYPES[it.slot] && ARMOR_TYPES[it.slot].slot) || '?';
 };
 
@@ -2190,7 +2209,11 @@ const slotLayout = () => [
 const drawSlots = (scene, slots, st) => {
   const gr = scene.add.graphics().lineStyle(2, 0x596072, 1).fillStyle(0x1d2230, 1);
   slots.forEach(s => gr.fillRect(s.x - 32, s.y - 32, 64, 64).strokeRect(s.x - 32, s.y - 32, 64, 64));
-  SLOT_ORDER.forEach((s, i) => scene.add.text(562, 110 + i * 70, s === 'weapon' ? '武器' : s === 'artifact' ? '遺物' : ARMOR_TYPES[s].slot, st).setOrigin(0, 0.5));
+  SLOT_ORDER.forEach((s, i) => {
+    // ★ sub_weapon の場合に '副武' と表示する分岐を追加
+    const label = s === 'weapon' ? '武器' : s === 'sub_weapon' ? '副武' : s === 'artifact' ? '遺物' : (ARMOR_TYPES[s] ? ARMOR_TYPES[s].slot : '');
+    scene.add.text(562, 110 + i * 70, label, st).setOrigin(0, 0.5);
+  });
 };
 // 【修正後】makeIcon 関数
 const makeIcon = (scene, it, x, y) => {
@@ -2272,16 +2295,33 @@ class BackpackScene extends MenuScene {
   }
 
   move(src, dst) {
-    const a = this.get(src), b = this.get(dst);
-    const fits = (l, it) => !it || l.kind === 'pack' || it.slot === l.key;
-    if (!fits(dst, a) || !fits(src, b)) return this.noteText.setText('その部位には装備できません');
-    if (src.kind === 'eq' && src.key === 'weapon' && !b) return this.noteText.setText('武器は外せません。バッグの別の武器と入れ替えてください');
-    this.set(src, b); this.set(dst, a);
-    const m = this.scene.get('main'); m.hp = Math.min(m.hp, maxHp());
-    this.noteText.setText('');
+  const a = this.get(src), b = this.get(dst);
+  
+  // 装備スロットにセットできるアイテムかどうかの判定
+  const fits = (l, it) => {
+    if (!it || l.kind === 'pack') return true;
+    if (l.key === 'weapon' || l.key === 'sub_weapon') {
+      return it.slot === 'weapon'; // 武器属性ならメイン・サブどちらにも装備可能
+    }
+    return it.slot === l.key;
+  };
+
+  if (!fits(dst, a) || !fits(src, b)) return this.noteText.setText('その部位には装備できません');
+  
+  // メイン武器を空にするのを防止
+  if (src.kind === 'eq' && src.key === 'weapon' && !b) {
+    return this.noteText.setText('メイン武器は外せません。別の武器と入れ替えてください');
+  }
+
+  // 枠にセットされたアイテムの slot 情報を更新して代入
+  this.set(src, b); 
+  this.set(dst, a);
+  
+  const m = this.scene.get('main'); 
+  m.hp = Math.min(m.hp, maxHp());
+  this.noteText.setText('');
   }
 }
-
 class BlacksmithScene extends MenuScene {
   constructor() { super('blacksmith'); }
 
@@ -2328,7 +2368,7 @@ class BlacksmithScene extends MenuScene {
     saveGame();
     this.render();
   }
-}
+} // ← BlacksmithScene クラスの閉じカッコを追加！
 
 const packCell = (ox, i) => ({ x: ox + 28 + (i % PACK_COLS) * 66, y: 138 + Math.floor(i / PACK_COLS) * 66 });
 const drawPackFrames = (scene, ox) => {
