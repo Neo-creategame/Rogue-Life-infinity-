@@ -680,8 +680,40 @@ const wearArmor = n => SLOT_KEYS.map(k => EQUIPPED[k]).filter(it => it && wear(i
 
 const spendGold = n => { if (PLAYER.gold < n) return false; PLAYER.gold -= n; return true; };
 const buyPotion = kind => { if (!spendGold(POTION_DEF[kind].price)) return false; POTIONS[kind]++; return true; };
-const sellPrice = it => isArtifact(it) ? (it.val || 10) * SHOP.sellPerArtifactPct : Math.max(1, Math.round((isWeapon(it) ? it.atk * SHOP.sellPerAtk : armorScore(it) * SHOP.sellPerArmor) * (0.5 + 0.5 * it.dur / it.durMax)));
-const sellFromPack = i => { const it = BACKPACK[i]; if (!it) return 0; const p = sellPrice(it); BACKPACK[i] = null; PLAYER.gold += p; return p; };
+// 【修正後】アイテムの売値を計算する関数
+const sellPrice = it => {
+  if (!it) return 0;
+
+  // 1. ポーション（スタック可能アイテム）の場合
+  if (it.slot === 'potion') {
+    const basePrice = (POTION_DEF[it.kind] && POTION_DEF[it.kind].price) || 100;
+    const unitSellPrice = Math.max(1, Math.floor(basePrice * 0.5)); // 定価の50%で売却
+    const count = it.stack || 1;
+    return unitSellPrice * count; // 1個の売値 × 所持数
+  }
+
+  // 2. 遺物（アーティファクト）の場合
+  if (isArtifact(it)) {
+    return (it.val || 10) * SHOP.sellPerArtifactPct;
+  }
+
+  // 3. 武器・防具の場合
+  const durMax = it.durMax || 1;
+  const dur = it.dur != null ? it.dur : durMax;
+  const baseStat = isWeapon(it) ? it.atk * SHOP.sellPerAtk : armorScore(it) * SHOP.sellPerArmor;
+  
+  return Math.max(1, Math.round(baseStat * (0.5 + 0.5 * (dur / durMax))));
+};
+// 【修正後】バッグの指定スロットのアイテムを売却する関数
+const sellFromPack = i => {
+  const it = BACKPACK[i];
+  if (!it) return 0;
+  
+  const price = sellPrice(it); // 正しく計算された合計売値を取得
+  BACKPACK[i] = null;          // バッグのスロットを空にする
+  PLAYER.gold += price;        // 所持金に加算
+  return price;
+};
 const applyDeathPenalty = () => { PLAYER.pts = 0; ownedItems().forEach(it => { it.dur = Math.floor(it.dur * DEATH.durKeep); }); };
 const ownedItems = () => [weapon, ...BACKPACK, ...STORAGE, ...Object.values(EQUIPPED)].filter(it => it && !isArtifact(it));
 const isWeapon = it => it.slot === 'weapon';
