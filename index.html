@@ -89,7 +89,8 @@ function saveGame() {
       artifactEq: artifactEq,
       equipped: EQUIPPED,
       backpack: BACKPACK,
-      storage: STORAGE
+      storage: STORAGE,
+      spellbookSlots: SPELLBOOK_SLOTS
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;
@@ -116,6 +117,10 @@ function loadGame() {
     data.backpack.forEach((item, i) => { BACKPACK[i] = item; });
     data.storage.forEach((item, i) => { STORAGE[i] = item; });
 
+    if (data.spellbookSlots) {
+      data.spellbookSlots.forEach((item, i) => { SPELLBOOK_SLOTS[i] = item; });
+    }
+    
     return true;
   } catch (e) {
     console.error('ロード失敗:', e);
@@ -155,8 +160,16 @@ const WEAPONS = {
     speedMult: 1.05,
     speed: 650,
     skill: { name: 'サンダークロス', cd: 5000 }
-  }
+  },
+  spellbook: { name: 'スペルブック', base: 30, cd: 300, range: 24, speedMult: 1.0, skill: { name: '魔術ストック', cd: 1000 }}
+
 };
+
+// ---- スペルブック専用スロットの状態管理 ----
+// 3つのスロットにセットされた武器オブジェクトを保持
+const SPELLBOOK_SLOTS = [null, null, null];
+// 各スロットの個別クールダウン管理用
+const SPELLBOOK_SKILL_CD = [0, 0, 0];
 
 const WEAPON_VARIATIONS = {
   sword: [
@@ -415,6 +428,12 @@ const BEHAVIORS = {
         });
       }
     }
+  },
+  spellbook: {
+  // 通常攻撃：目の前の超狭範囲を叩く（ファン角度も狭く設定）
+    attack: (s, dmg) => s.strike(s.ang, Math.PI * 0.25, weapon.range, dmg, 0xb15cff),
+  // Eキーの標準スキル（案内表示用）
+    skill: (s, dmg) => s.popup('1,2,3キーでストックスキルを発動！', '#d98cff')
   }
 };
 
@@ -721,7 +740,7 @@ const repairCost = it => Math.ceil((it.durMax - it.dur) * SMITH.repairPerPt * (i
 const repairItem = it => { const c = repairCost(it); if (c <= 0 || !spendGold(c)) return false; it.dur = it.durMax; return true; };
 const repairAllCost = () => ownedItems().reduce((sum, it) => sum + repairCost(it), 0);
 const repairAll = () => { const c = repairAllCost(); if (c <= 0 || !spendGold(c)) return false; ownedItems().forEach(it => { it.dur = it.durMax; }); return true; };
-const canUpgrade = it => !isArtifact(it) && (it.lv || 0) < SMITH.upMax;
+const canUpgrade = it => !isArtifact(it) && it.type !== 'spellbook' && (it.lv || 0) < SMITH.upMax;
 const upgradeCost = it => Math.round(SMITH.upBase * Math.pow(SMITH.upGrowth, it.lv || 0) * (isWeapon(it) ? SMITH.weaponUpMult : 1));
 const upgradedStats = it => {
   const m = 1 + SMITH.upStep;
@@ -983,6 +1002,9 @@ class Main extends Phaser.Scene {
     this.add.rectangle(this.altar.x, this.altar.y, 20, 20, 0x4fd1c5).setAngle(45).setStrokeStyle(2, 0xffffff);
     this.add.text(this.altar.x, this.altar.y - 28, 'ステータス台', st).setOrigin(0.5);
     this.smith = { x: 31 * T + T / 2, y: 10 * T + T / 2 };
+    this.grimoireAlt = { x: 26 * T + T / 2, y: 14 * T + T / 2 };
+    this.add.rectangle(this.grimoireAlt.x, this.grimoireAlt.y, 20, 20, 0xb15cff).setStrokeStyle(2, 0xffffff);
+    this.add.text(this.grimoireAlt.x, this.grimoireAlt.y - 28, '魔導台', st).setOrigin(0.5);
     this.add.rectangle(this.smith.x, this.smith.y, 20, 20, 0xe08a3c).setStrokeStyle(2, 0xffffff);
     this.add.text(this.smith.x, this.smith.y - 28, '鍛冶台', st).setOrigin(0.5);
     this.services = [
@@ -1114,7 +1136,7 @@ class Main extends Phaser.Scene {
     this.keys = this.input.keyboard.addKeys({
       up: 'W', down: 'S', left: 'A', right: 'D',
       up2: 'UP', down2: 'DOWN', left2: 'LEFT', right2: 'RIGHT',
-      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', swap: 'X', bossWeapon1: 'ONE', bossWeapon2: 'TWO', bossWeapon3: 'THREE', bossWeapon4: 'FOUR'
+      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', swap: 'X', bossWeapon1: 'SEVEN', bossWeapon2: 'EIGHT', bossWeapon3: 'NINE', bossWeapon4: 'ZERO', stock1: 'ONE', stock2: 'TWO', stock3: 'THREE', getSpellbook: 'SIX'
     });
     
     this.input.on('pointerdown', () => this.attack());
@@ -1215,6 +1237,10 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');
     // Xキーで武器切り替え
     if (Phaser.Input.Keyboard.JustDown(k.swap)) this.swapWeapon();
+    if (Phaser.Input.Keyboard.JustDown(k.stock1)) this.castSpellbookSkill(0);
+    if (Phaser.Input.Keyboard.JustDown(k.stock2)) this.castSpellbookSkill(1);
+    if (Phaser.Input.Keyboard.JustDown(k.stock3)) this.castSpellbookSkill(2);
+    if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
 
     if (Phaser.Input.Keyboard.JustDown(k.subSkill)) this.subSkill();
     if (Phaser.Input.Keyboard.JustDown(k.potF)) this.usePotion('full');
@@ -1227,6 +1253,11 @@ class Main extends Phaser.Scene {
     }
     const nearAltar = this.altar && Math.hypot(p.x - this.altar.x, p.y - this.altar.y) < 28;
     if (nearAltar && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) { this.scene.pause(); this.scene.launch('stats'); }
+    const nearGrimoire = this.grimoireAlt && Math.hypot(p.x - this.grimoireAlt.x, p.y - this.grimoireAlt.y) < 28;
+    if (nearGrimoire && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) {
+      this.scene.pause();
+      this.scene.launch('grimoire'); // 新設する魔導台シーンを呼び出し
+    }
     const nearSmith = this.smith && Math.hypot(p.x - this.smith.x, p.y - this.smith.y) < 28;
     if (nearSmith && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) { this.scene.pause(); this.scene.launch('blacksmith'); }
     const near = this.services.find(s => Math.hypot(p.x - s.x, p.y - s.y) < 28);
@@ -1821,6 +1852,59 @@ class Main extends Phaser.Scene {
   this.floatText(this.p.x, this.p.y - 30, `⇄ ${weapon.name}`, '#ffd36a', '16px', 800);
   saveGame();
 }
+  castSpellbookSkill(slotIndex) {
+  const n = this.time.now;
+  if (weapon.type !== 'spellbook') return; // スペルブック装備時のみ発動可能
+  if (this.dodge || this.leaving) return;
+
+  const targetWeapon = SPELLBOOK_SLOTS[slotIndex];
+  if (!targetWeapon) {
+    return this.popup(`スロット${slotIndex + 1}に武器がセットされていません`, '#a0a7b8');
+  }
+
+  // クールタイム（通常の2倍）のチェック
+  if (n < SPELLBOOK_SKILL_CD[slotIndex]) {
+    const leftSec = ((SPELLBOOK_SKILL_CD[slotIndex] - n) / 1000).toFixed(1);
+    return this.popup(`スキル${slotIndex + 1}: あと ${leftSec} 秒`, '#a0a7b8');
+  }
+
+  const baseCd = targetWeapon.skill ? targetWeapon.skill.cd : 3000;
+  SPELLBOOK_SKILL_CD[slotIndex] = n + (baseCd * 2); // クールタイム2倍
+
+  // ダメージ計算：セットされた武器の攻撃力をベースに1/3（約33%）へ減衰
+  const setWeaponAtk = targetWeapon.atk || 100;
+  const baseTotalAtk = Math.round((setWeaponAtk + PLAYER.atkPts * ATK_PER_PT) * (weapon.dur > 0 ? 1 : DURABILITY.brokenAtkMult));
+  let mult = 1 + artifactStat('atkPct') / 100;
+  const spellDmg = Math.max(1, Math.round((baseTotalAtk * mult) / 3)); // 威力 1/3
+
+  // セットされた武器のスキルエフェクトを実行
+  const behavior = BEHAVIORS[targetWeapon.type];
+  if (behavior && behavior.skill) {
+    behavior.skill(this, spellDmg);
+    this.floatText(this.p.x, this.p.y - 25, `✦ ${targetWeapon.skill.name}`, '#d98cff', '15px', 800);
+    this.useWeapon(DURABILITY.weaponSkill);
+  }
+}
+  obtainSpellbook() {
+  // ★ すでに持っているか判定（メイン武器、サブ武器、バッグ、倉庫をチェック）
+  const hasInMain = weapon && weapon.type === 'spellbook';
+  const hasInSub = EQUIPPED.sub_weapon && EQUIPPED.sub_weapon.type === 'spellbook';
+  const hasInPack = BACKPACK.some(it => it && it.type === 'spellbook');
+  const hasInStorage = STORAGE.some(it => it && it.type === 'spellbook');
+
+  if (hasInMain || hasInSub || hasInPack || hasInStorage) {
+    return this.popup('スペルブックはすでに所持しています（最大1冊）', '#ff9a8a');
+  }
+
+  // 1冊も持っていない場合のみ生成してバッグへ
+  const spellbookItem = rollWeapon('spellbook', Math.max(1, this.floor));
+  if (addToPack(spellbookItem)) {
+    this.popup('📖 スペルブックを入手しました！', '#d98cff');
+    saveGame();
+  } else {
+    this.popup('バッグが満杯のため入手できません', '#ff9a8a');
+  }
+}
 }
 
 class HudScene extends Phaser.Scene {
@@ -2172,7 +2256,7 @@ class PauseScene extends MenuScene {
   init(data) { this.floor = data.floor; this.page = 0; }
 
   create() {
-    this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x000000, 0.65);
+    this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x000000, 0.75);
     this.keyTab = this.input.keyboard.addKey('TAB');
     this.t0 = this.time.now; this.items = [];
     this.show('top');
@@ -2185,23 +2269,50 @@ class PauseScene extends MenuScene {
   show(mode) {
     this.items.forEach(o => o.destroy()); this.items = [];
     const cx = this.scale.width / 2, cleared = SAVE.cleared;
-    this.btn(cx, 90, `ポーズ中  攻略済み:${cleared}F  (Tabで再開)`, null, false);
+    
+    this.btn(cx, 60, `ポーズ中  攻略済み最高: ${cleared}F  (Tabで再開)`, null, false);
+    
     if (mode === 'top') {
-      this.btn(cx, 190, '町へ戻る', () => this.go(0), this.floor !== 0);
-      this.btn(cx, 250, '攻略済みの階層を選ぶ', () => this.show('floors'), cleared > 0);
-      this.btn(cx, 310, '手動セーブ', () => {
+      // ショートカット：解放済みの最高階層へ直接入る
+      if (cleared > 0) {
+        const latestFloor = nextFloor(cleared);
+        this.btn(cx, 150, `⚡ 最新の挑戦階へ (${latestFloor}F)`, () => this.go(latestFloor));
+      }
+      this.btn(cx, 210, '町へ戻る', () => this.go(0), this.floor !== 0);
+      this.btn(cx, 270, '攻略済みの階層一覧から選ぶ', () => this.show('floors'), cleared > 0);
+      this.btn(cx, 330, '手動セーブ', () => {
         if (saveGame()) this.btn(cx, 430, 'セーブしました！', null, false);
       });
-      this.btn(cx, 370, '再開', () => this.close());
+      this.btn(cx, 390, 'ゲームに戻る', () => this.close());
       return;
     }
-    const per = 6, list = floorList(cleared), pages = Math.ceil(list.length / per);
-    list.slice(this.page * per, this.page * per + per).forEach((f, i) => {
-      this.btn(cx - 110 + (i % 2) * 220, 170 + Math.floor(i / 2) * 60, `${f}F`, () => this.go(f));
+
+    // --- 階層選択画面（floors）の改善 ---
+    const list = floorList(cleared).reverse(); // ★ 降順（最新の階層を上に）
+    const per = 10; // 1ページに表示する件数を増やす (2列×5行)
+    const pages = Math.ceil(list.length / per);
+
+    // クイックジャンプボタン（10階刻みなどのショートカット）
+    this.btn(cx - 160, 110, '最新階へ', () => this.go(list[0]));
+    if (cleared >= 10) this.btn(cx, 110, '10F', () => this.go(10));
+    if (cleared >= 20) this.btn(cx + 160, 110, '20F', () => this.go(20));
+
+    // 階層ボタンのグリッド配置
+    const currentList = list.slice(this.page * per, this.page * per + per);
+    currentList.forEach((f, i) => {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const bx = cx - 110 + col * 220;
+      const by = 170 + row * 48;
+      const label = isSub(f) ? `${f}F (ボス)` : `${f}F`;
+      this.btn(bx, by, label, () => this.go(f));
     });
-    if (this.page > 0) this.btn(cx - 150, 390, '◀', () => { this.page--; this.show('floors'); });
-    this.btn(cx, 390, '戻る', () => this.show('top'));
-    if (this.page + 1 < pages) this.btn(cx + 150, 390, '▶', () => { this.page++; this.show('floors'); });
+
+    // ページネーション
+    const navY = 440;
+    if (this.page > 0) this.btn(cx - 160, navY, '◀ 前の10件', () => { this.page--; this.show('floors'); });
+    this.btn(cx, navY, `戻る (${this.page + 1}/${pages})`, () => this.show('top'));
+    if (this.page + 1 < pages) this.btn(cx + 160, navY, '次の10件 ▶', () => { this.page++; this.show('floors'); });
   }
 
   go(floor) { saveGame(); const m = this.scene.get('main'); this.close(); m.travel(floor); }
@@ -2528,11 +2639,106 @@ class ShopScene extends MenuScene {
 }
   sell() { const p = sellFromPack(this.sel); this.note.setText(p ? `${p}G で売りました` : ''); this.sel = null; saveGame(); this.render(); }
 }
+// ---- 魔導台（無料スキルセット施設）クラス ----
+class GrimoireScene extends MenuScene {
+  constructor() { super('grimoire'); }
+
+  create() {
+    const w = this.scale.width, h = this.scale.height;
+    const st = { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#e8eaf0' };
+    this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.75);
+
+    this.add.text(40, 50, 'バックパックの武器（クリックでスロットへ登録）', st);
+    this.add.text(460, 50, 'スペルブックの登録スキル（クリックでバッグへ戻す）', st);
+    drawPackFrames(this, 40);
+
+    this.info = this.add.text(40, 380, '', { ...st, wordWrap: { width: 400 } });
+    this.note = this.add.text(40, 440, '', { ...st, color: '#ffd36a' });
+
+    this.items = [];
+    this.input.keyboard.addKey('ESC').on('down', () => this.close());
+    this.render();
+  }
+
+  render() {
+    this.items.forEach(o => o.destroy()); this.items = [];
+
+    // 1. 左側：バックパック内の武器を描画
+    BACKPACK.forEach((it, i) => {
+      if (!it || it.slot !== 'weapon') return; // 武器以外は選択不可
+      const p = packCell(40, i);
+      const c = makeIcon(this, it, p.x, p.y).setSize(56, 56).setInteractive();
+      // ★ バックパックのインデックス (i) を渡して登録
+      c.on('pointerdown', () => this.time.delayedCall(0, () => this.equipToSlot(i)));
+      c.on('pointerover', () => this.info.setText([itemInfo(it), `スキル: ${it.skill ? it.skill.name : 'なし'}`]));
+      c.on('pointerout', () => this.info.setText(''));
+      this.items.push(c);
+    });
+
+    // 2. 右側：魔導書のスロット3つを描画
+    SPELLBOOK_SLOTS.forEach((it, i) => {
+      const sx = 520;
+      const sy = 110 + i * 85;
+      const gr = this.add.graphics().lineStyle(2, 0xb15cff, 1).fillStyle(0x1d2230, 1);
+      gr.fillRect(sx - 32, sy - 32, 64, 64).strokeRect(sx - 32, sy - 32, 64, 64);
+
+      this.add.text(sx + 45, sy - 15, `スロット ${i + 1} [${i + 1}キー]`, { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffd36a' });
+
+      if (it) {
+        const c = makeIcon(this, it, sx, sy).setSize(56, 56).setInteractive();
+        c.on('pointerdown', () => this.time.delayedCall(0, () => this.clearSlot(i)));
+        c.on('pointerover', () => this.info.setText([`【${it.name}】`, `スキル: ${it.skill.name}`, `威力: セット武器攻撃力の1/3`, `CD: ${(it.skill.cd * 2 / 1000).toFixed(1)}秒`]));
+        c.on('pointerout', () => this.info.setText(''));
+        this.items.push(c);
+        this.add.text(sx + 45, sy + 5, `${it.skill.name} (威力1/3・CD2倍)`, { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#a0a7b8' });
+      } else {
+        this.add.text(sx + 45, sy + 5, '未登録 (空き)', { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#596072' });
+      }
+    });
+
+    this.btn(400, 480, '閉じる', () => this.close());
+  }
+
+  // ★ バックパックからスロットへ登録（バッグから削除）
+  equipToSlot(packIndex) {
+    const emptyIdx = SPELLBOOK_SLOTS.indexOf(null);
+    if (emptyIdx < 0) {
+      return this.note.setText('スロットが満杯です。解除したいスロットをクリックしてください');
+    }
+
+    const item = BACKPACK[packIndex];
+    if (!item) return;
+
+    SPELLBOOK_SLOTS[emptyIdx] = item; // スロットへ登録
+    BACKPACK[packIndex] = null;       // バッグから消去
+
+    this.note.setText(`スロット ${emptyIdx + 1} に ${item.name} を登録しました！`);
+    saveGame(); // ★ 自動セーブ
+    this.render();
+  }
+
+  // ★ スロットから解除してバックパックへ戻す
+  clearSlot(slotIndex) {
+    const item = SPELLBOOK_SLOTS[slotIndex];
+    if (!item) return;
+
+    // バックパックに戻す（空きがない場合は戻せない）
+    if (addToPack(item)) {
+      SPELLBOOK_SLOTS[slotIndex] = null;
+      this.note.setText(`スロット ${slotIndex + 1} の ${item.name} をバッグに戻しました`);
+      saveGame(); // ★ 自動セーブ
+    } else {
+      this.note.setText('バッグが満杯のため解除できません！空きを作ってください');
+    }
+
+    this.render();
+  }
+}
 
 new Phaser.Game({
   type: Phaser.AUTO, parent: 'game', width: 800, height: 540, backgroundColor: '#0b0d12',
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_HORIZONTALLY },
-  scene: [Main, HudScene, PauseScene, StatScene, BackpackScene, BlacksmithScene, ShopScene, InnScene, StorageScene]
+  scene: [Main, HudScene, PauseScene, StatScene, BackpackScene, BlacksmithScene, ShopScene, InnScene, StorageScene, GrimoireScene]
 });
 </script>
 </body>
