@@ -77,6 +77,61 @@ const SAVE = { cleared: 0 };
 const TOWN_SHOPS = [['お店', 6, 5], ['宿屋', 17, 5], ['鍛冶屋', 28, 5], ['倉庫', 6, 14]];
 // ---- セーブ＆ロード機能 ----
 const SAVE_KEY = 'alone_rpg_save_data_v1';
+// バージョン管理と更新履歴
+const GAME_VERSION = '1.7.1'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
+const VERSION_KEY = 'alone_rpg_seen_version';
+/*'✦ Ver 1..0 アップデート情報 ✦',
+  '',
+  '【】',
+  '・',
+  '',*/
+const PATCH_NOTES = [
+  '✦ Ver 1.7.1 アップデート情報 ✦',
+  '',
+  '【修正】',
+  '・11〜20階層のレアボスの透明中にスタンさせると完全に無敵になるのを修正',
+  '・霧が発生しないのを修正',
+  '',
+  '✦ Ver 1.7.0 アップデート情報 ✦',
+  '',
+  '【新要素】',
+  '・11〜20階層のレアモンスターの効果を更新',
+  '',
+  '✦ Ver 1.6.1 アップデート情報 ✦',
+  '',
+  '【修正】',
+  '・1〜10階層のレアモンスター【深淵の巨躯】アビス・ギガントの',
+  '特殊スキルによる攻略の進行不可を修正。',
+  '',
+  '✦ Ver 1.6.0 アップデート情報 ✦',
+  '',
+  '【新要素】',
+  '・各フロアに一定確率でレアモンスターが出現するように！！',
+  '倒せば大幅レベルアップ！！',
+  '',
+  '✦ Ver 1.5.1 アップデート情報 ✦',
+  '',
+  '【修正】',
+  '・ポップアップの表示バグを修正',
+  '',
+  '✦ Ver 1.5.0 アップデート情報 ✦',
+  '',
+  '【新要素】',
+  'アップデート情報のポップアップの実装',
+  '',
+  '',
+  '✦ Ver 1.4.0 アップデート情報 ✦',
+  '',
+  '【新要素】',
+  '・新ボス「【暴君】真紅の皇帝 レッドドラゴン」の攻撃方法の更新',
+  '',
+  '✦ Ver 1.3.0 アップデート情報 ✦',
+  '',
+  '【新要素】',
+  '・魔導台が追加され、スペルブックにスキルを登録可能に！',
+  '・15階以降のボスがバリアや特殊ギミックを使用するように変更',
+  '・新たに特性（パッシブ）を持ったボスが登場',
+];
 
 // データを保存する
 function saveGame() {
@@ -126,6 +181,15 @@ function loadGame() {
     console.error('ロード失敗:', e);
     return false;
   }
+}
+// 最新バージョンのポップアップを見る必要があるかチェック
+function checkNewVersion() {
+  const seenVersion = localStorage.getItem(VERSION_KEY);
+  if (seenVersion !== GAME_VERSION) {
+    localStorage.setItem(VERSION_KEY, GAME_VERSION);
+    return true; // 新バージョン初回起動！
+  }
+  return false; // すでに確認済み
 }
 
 // ゲーム起動時にセーブデータがあれば自動ロード！
@@ -963,9 +1027,57 @@ const BOSS_FLOORS = {
   35: { type: 'ninja',        trait: 'counter_reflect',  name: '【反撃の刃】影の暗殺者 ニンジャ' },
   45: { type: 'elementalist', trait: 'skill_counter',    name: '【魔力反応】魔導王 エレメンタリスト' },
   55: { type: 'golem',        trait: 'anti_range',       name: '【結界の守護者】アンチ・レンジゴーレム' },
-  60: { type: 'dragon',       trait: 'anti_range',       name: '【暴君】真紅の皇帝 レッドドラゴン' }
+  60: { type: 'dragon',       trait: 'dragon_emperor',       name: '【暴君】真紅の皇帝 レッドドラゴン' }
 };
 const DEFAULT_BOSS_CONFIG = { type: 'golem', trait: null, name: '階層の番人' };
+// ★ 階層帯ごとのレアモンスター定義
+const RARE_MONSTERS = [
+  {
+    maxFloor: 10,
+    name: '【深淵の巨躯】アビス・ギガント',
+    color: 0xff0055,
+    r: 24,
+    hpMult: 8,
+    speed: 110,
+    atkMult: 2.0,
+    skill: 'pull' // 吸い寄せ
+  },
+  {
+    maxFloor: 20,
+    name: '【疾風の影】シャドウ・ファントム',
+    color: 0x7000ff,
+    r: 18,
+    hpMult: 6,
+    speed: 210, // 超高速！
+    atkMult: 2.2,
+    skill: 'blinkDash' // 瞬身ダッシュ
+  },
+  {
+    maxFloor: 30,
+    name: '【獄炎の咆哮】ヘル・ヘルハウンド',
+    color: 0xff5500,
+    r: 20,
+    hpMult: 9,
+    speed: 140,
+    atkMult: 2.8, // 超高火力
+    skill: 'flameRing' // 全方位火柱
+  },
+  {
+    maxFloor: 999, // 31F以降
+    name: '【虚無の執政】ボイド・レイス',
+    color: 0x9900ff,
+    r: 22,
+    hpMult: 10,
+    speed: 160,
+    atkMult: 3.0,
+    skill: 'voidBullet' // 複合弾幕
+  }
+];
+
+// 階層から対応するレアモンスター定義を取得する関数
+const getRareDef = (floor) => {
+  return RARE_MONSTERS.find(m => floor <= m.maxFloor) || RARE_MONSTERS[RARE_MONSTERS.length - 1];
+};
 
 
 class Main extends Phaser.Scene {
@@ -996,6 +1108,15 @@ class Main extends Phaser.Scene {
     this.bars = this.add.graphics().setDepth(5);
     this.setupPlayer();
     if (this.notice) this.popup(this.notice, '#ff9a8a');
+
+    /*this.setupPlayer();
+    if (this.notice) this.popup(this.notice, '#ff9a8a');*/
+
+    // ★ 初回起動またはアプデ後初回ならアプデ画面を開く
+    if (checkNewVersion()) {
+      this.scene.pause();
+      this.scene.launch('patch_notes');
+    }
   }
 
   buildTown() {
@@ -1024,23 +1145,71 @@ class Main extends Phaser.Scene {
 
   buildDungeon() {
     const ctr = o => ({ x: (o.x + (o.w >> 1)) * T + T / 2, y: (o.y + (o.h >> 1)) * T + T / 2 });
-    const s0 = ctr(rooms[0]), dist0 = o => Math.hypot(ctr(o).x - s0.x, ctr(o).y - s0.y);
-    this.stairs = ctr(rooms.slice(1).reduce((a, b) => dist0(b) > dist0(a) ? b : a));
-    this.stairsOpen = !isSub(this.floor) || this.floor <= SAVE.cleared;
-    this.stairsGfx = this.add.rectangle(this.stairs.x, this.stairs.y, 22, 22, this.stairsOpen ? STAIRS_OPEN : STAIRS_LOCKED).setStrokeStyle(2, 0xffffff);
-    this.add.text(this.stairs.x, this.stairs.y, '↑', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#1d2230' }).setOrigin(0.5);
-    const eh = Math.round(ENEMY.hp * (1 + 0.25 * (this.floor - 1)));
-    this.enemies = [];
-    if (!isSub(this.floor)) {
-      rooms.slice(1).forEach(rm => {
-        const n = 2 + Math.floor(Math.random() * 2);
-        for (let i = 0; i < n; i++) {
-          const tx = rm.x + 1 + Math.floor(Math.random() * (rm.w - 2));
-          const ty = rm.y + 1 + Math.floor(Math.random() * (rm.h - 2));
-          this.spawnEnemy(tx * T + T / 2, ty * T + T / 2, eh);
+  const s0 = ctr(rooms[0]), dist0 = o => Math.hypot(ctr(o).x - s0.x, ctr(o).y - s0.y);
+  this.stairs = ctr(rooms.slice(1).reduce((a, b) => dist0(b) > dist0(a) ? b : a));
+  this.stairsOpen = !isSub(this.floor) || this.floor <= SAVE.cleared;
+  this.stairsGfx = this.add.rectangle(this.stairs.x, this.stairs.y, 22, 22, this.stairsOpen ? STAIRS_OPEN : STAIRS_LOCKED).setStrokeStyle(2, 0xffffff);
+  this.add.text(this.stairs.x, this.stairs.y, '↑', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#1d2230' }).setOrigin(0.5);
+  
+  this.enemies = [];
+
+  // ボス階以外かつ、一定確率（例: 50%）または特定の階で出現
+  const isRareFloor = !isSub(this.floor) && (Math.random() < 0.08 );
+  this.isDangerFloor = isRareFloor;
+
+  const dangerMult = this.isDangerFloor ? 1.6 : 1.0;
+  const eh = Math.round(ENEMY.hp * (1 + 0.25 * (this.floor - 1)) * dangerMult);
+
+  if (!isSub(this.floor)) {
+    // 通常敵の生成
+    rooms.slice(1).forEach((rm) => {
+      const n = (2 + Math.floor(Math.random() * 2)) + (this.isDangerFloor ? 1 : 0);
+      for (let i = 0; i < n; i++) {
+        const tx = rm.x + 1 + Math.floor(Math.random() * (rm.w - 2));
+        const ty = rm.y + 1 + Math.floor(Math.random() * (rm.h - 2));
+        const enemy = this.spawnEnemy(tx * T + T / 2, ty * T + T / 2, eh);
+        if (this.isDangerFloor) {
+          enemy.speed *= 1.2;
+          enemy.touch = Math.round(enemy.touch * 1.3);
         }
+      }
+    });
+
+    // ★ 階層に応じたレアモンスターの生成
+    // buildDungeon() 内のレアモンスター生成部分の一部を書き換え
+    if (this.isDangerFloor) {
+      const rareDef = getRareDef(this.floor);
+      const rareRoom = rooms[Math.floor(rooms.length / 2)];
+      const rx = (rareRoom.x + (rareRoom.w >> 1)) * T;
+      const ry = (rareRoom.y + (rareRoom.h >> 1)) * T;
+  
+      const rareHp = Math.round(eh * rareDef.hpMult);
+      const rareEnemy = this.spawnEnemy(rx, ry, rareHp, {
+        r: rareDef.r,
+        color: rareDef.color,
+        speed: rareDef.speed,
+        touchDmg: Math.round(ENEMY.touchDmg * rareDef.atkMult),
+        aggro: 380
+      });
+
+      rareEnemy.isRare = true;
+      rareEnemy.rareName = rareDef.name;
+      rareEnemy.rareSkill = rareDef.skill;
+  
+  // ★ シャドウ・ファントム（11〜20F）専用フラグの初期化
+      if (rareDef.skill === 'blinkDash') {
+        rareEnemy.isInvincible = true;  // 基本は無敵状態
+        rareEnemy.isVulnerable = false;  // 3秒間だけ攻撃が通るフラグ
+        rareEnemy.vulnUntil = 0;         // 実体化終了時刻
+        rareEnemy.nextAttackCheck = 0;   // 6秒ごとの飛来判定時刻
+        rareEnemy.c.setAlpha(0.15);      // うっすら透ける（透明表現）
+      }
+
+      this.time.delayedCall(400, () => {
+        this.popup(`⚠️ 警告！【${rareDef.name}】が徘徊中！`, '#ff0055', 0);
       });
     }
+  }
     
     // 〇 修正後のコード
     if (isSub(this.floor)) {
@@ -1161,7 +1330,7 @@ class Main extends Phaser.Scene {
     this.keys = this.input.keyboard.addKeys({
       up: 'W', down: 'S', left: 'A', right: 'D',
       up2: 'UP', down2: 'DOWN', left2: 'LEFT', right2: 'RIGHT',
-      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', swap: 'X', bossWeapon1: 'SEVEN', bossWeapon2: 'EIGHT', bossWeapon3: 'NINE', bossWeapon4: 'ZERO', stock1: 'ONE', stock2: 'TWO', stock3: 'THREE', getSpellbook: 'SIX'
+      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', swap: 'X', bossWeapon1: 'SEVEN', bossWeapon2: 'EIGHT', bossWeapon3: 'NINE', bossWeapon4: 'ZERO', stock1: 'ONE', stock2: 'TWO', stock3: 'THREE', getSpellbook: 'SIX', warp60: 'FIVE'
     });
     
     this.input.on('pointerdown', () => this.attack());
@@ -1255,17 +1424,20 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.atk)) this.attack();
     if (Phaser.Input.Keyboard.JustDown(k.skill)) this.skill();
     
-    // ★ デバッグキー（1, 2, 3キー）で各ボス限定武器を入手する処理を追加
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon2)) this.obtainBossWeapon('eruption_wand');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon3)) this.obtainBossWeapon('dragon_chain');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');
-    // Xキーで武器切り替え
     if (Phaser.Input.Keyboard.JustDown(k.swap)) this.swapWeapon();
     if (Phaser.Input.Keyboard.JustDown(k.stock1)) this.castSpellbookSkill(0);
     if (Phaser.Input.Keyboard.JustDown(k.stock2)) this.castSpellbookSkill(1);
     if (Phaser.Input.Keyboard.JustDown(k.stock3)) this.castSpellbookSkill(2);
     if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
+    if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
+      SAVE.cleared = Math.max(SAVE.cleared, 60);
+      saveGame();
+      this.travel(60, maxHp(), 'デバッグ: 60Fへワープしました');
+    }
 
     if (Phaser.Input.Keyboard.JustDown(k.subSkill)) this.subSkill();
     if (Phaser.Input.Keyboard.JustDown(k.potF)) this.usePotion('full');
@@ -1281,34 +1453,79 @@ class Main extends Phaser.Scene {
     const nearGrimoire = this.grimoireAlt && Math.hypot(p.x - this.grimoireAlt.x, p.y - this.grimoireAlt.y) < 28;
     if (nearGrimoire && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) {
       this.scene.pause();
-      this.scene.launch('grimoire'); // 新設する魔導台シーンを呼び出し
+      this.scene.launch('grimoire');
     }
     const nearSmith = this.smith && Math.hypot(p.x - this.smith.x, p.y - this.smith.y) < 28;
     if (nearSmith && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) { this.scene.pause(); this.scene.launch('blacksmith'); }
     const near = this.services.find(s => Math.hypot(p.x - s.x, p.y - s.y) < 28);
     if (near && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) { this.scene.pause(); this.scene.launch(near.key); }
+
+    // ★ 視界制限用グラフィックス（Depth 100 でプレイヤー上・UI背後に描画）
+    if (!this.fogGfx) {
+      this.fogGfx = this.add.graphics().setDepth(100);
+    }
+    this.fogGfx.clear();
+
     // ---- 敵・味方ミニオンの行動AI＆接触戦闘ループ ----
     for (const e of this.enemies) {
-      if (e.stunUntil && now < e.stunUntil) continue;
+      if (e.hp <= 0) continue;
 
-      // 1. 味方ミニオンの行動処理（敵を追従＆攻撃）
-      if (e.isAllyMinion) {
-        const targets = this.enemies.filter(x => x !== e && !x.isAllyMinion && x.hp > 0);
-      if (e.boss && e.bossType === 'ninja' && e.stealth) {
+      // ★ シャドウ・ファントム専用：タイマー状態の更新（スタン中でもタイマーは正しく進行）
+      if (e.isRare && e.rareSkill === 'blinkDash') {
+        // 雑魚敵と同じサイズに統一
+        e.r = 10;
+        e.c.setRadius(10);
+
+        // 3秒経過したら完全透明・無敵に戻す
+        if (e.isVulnerable && now >= e.vulnUntil) {
+          e.isVulnerable = false;
+          e.isInvincible = true;
+          e.c.setAlpha(0); // ★ 完全に透明化
+        }
+
+        // 6秒サイクルで範囲内なら飛来して実体化
         const distToPlayer = Math.hypot(p.x - e.c.x, p.y - e.c.y);
-        if (distToPlayer < 120) {
-          e.stealth = false;
-          e.c.setAlpha(1);
-            // プレイヤー背後にワープして一閃
-          const ambushAng = this.ang + Math.PI;
-          e.c.x = p.x + Math.cos(ambushAng) * 30;
-          e.c.y = p.y + Math.sin(ambushAng) * 30;
-          const ambushDmg = Math.round(e.touch * 2.0 * bossAtkFloorMult(this.floor));
-          this.hurtPlayer(ambushDmg);
-          this.floatText(e.c.x, e.c.y - 30, '⚡奇襲一閃！', '#ff4444', '18px', 1000);
-          this.cameras.main.shake(150, 0.01);
+        if (now >= (e.nextAttackCheck || 0)) {
+          e.nextAttackCheck = now + 6000;
+          if (distToPlayer < e.aggro) {
+            const a = this.ang + Math.PI + (Math.random() - 0.5);
+            const targetX = p.x + Math.cos(a) * 35;
+            const targetY = p.y + Math.sin(a) * 35;
+
+            if (free(targetX, targetY, e.r)) {
+              e.c.x = targetX;
+              e.c.y = targetY;
+            }
+
+            e.isInvincible = false;
+            e.isVulnerable = true;
+            e.vulnUntil = now + 3000; // 3秒間実体化
+            e.c.setAlpha(1.0);       // くっきり表示
+
+            this.floatText(e.c.x, e.c.y - 20, '⚡ 奇襲飛来！', '#ff4444', '16px', 800);
+            this.cameras.main.shake(120, 0.008);
+          }
+        }
+
+        // ★ 白い霧（モクモク）の全画面手前描画（周囲80pxだけくり抜いて視界制限）
+        if (distToPlayer < e.aggro) {
+          const w = this.scale.width, h = this.scale.height;
+          // 1. 全面を薄い白い煙で覆う
+          this.fogGfx.fillStyle(0xffffff, 0.40);
+          this.fogGfx.fillRect(p.x - w, p.y - h, w * 2, h * 2);
+          
+          // 2. プレイヤー周辺のみ視界を確保（くり抜き）
+          this.fogGfx.fillStyle(0x000000, 1.0);
+          this.fogGfx.fillCircle(p.x, p.y, 80);
         }
       }
+
+      // スタン中は移動・攻撃停止
+      if (e.stunUntil && now < e.stunUntil) continue;
+
+      // 味方ミニオン処理
+      if (e.isAllyMinion) {
+        const targets = this.enemies.filter(x => x !== e && !x.isAllyMinion && x.hp > 0);
         if (targets.length > 0) {
           const target = targets.reduce((nearest, curr) => {
             const d1 = Math.hypot(nearest.c.x - e.c.x, nearest.c.y - e.c.y);
@@ -1323,7 +1540,6 @@ class Main extends Phaser.Scene {
             if (free(e.c.x, ny, e.r)) e.c.y = ny;
           }
 
-          // 敵に接触時、0.5秒間隔で攻撃
           if (td < e.r + target.r && now >= (e.nextAllyAtk || 0)) {
             e.nextAllyAtk = now + 500;
             const allyAtk = Math.round(atkTotal(this) * 0.6);
@@ -1331,10 +1547,10 @@ class Main extends Phaser.Scene {
             this.floatText(e.c.x, e.c.y - 10, '攻撃!', '#d98cff', '12px', 400);
           }
         }
-        continue; // 味方ミニオンの処理はここまで
+        continue;
       }
 
-      // 2. 敵のターゲット選定（プレイヤーまたは生存している味方ミニオン）
+      // 敵の移動AI（シャドウ・ファントムも透明無敵状態で自由にマップ移動）
       const allyTargets = [
         { obj: p, r: 11, isPlayer: true, x: p.x, y: p.y },
         ...this.enemies.filter(x => x.isAllyMinion && x.hp > 0).map(x => ({ obj: x, r: x.r, isPlayer: false, x: x.c.x, y: x.c.y }))
@@ -1348,6 +1564,7 @@ class Main extends Phaser.Scene {
 
       const ex = nearestTarget.x - e.c.x, ey = nearestTarget.y - e.c.y, d = Math.hypot(ex, ey);
       const busy = e.boss && this.bossAi(e, now, dt, ex, ey, d);
+
       if (!busy && d < e.aggro && d > 1) {
         const v = e.speed * (dt / 1000) / d;
         const nx = e.c.x + ex * v, ny = e.c.y + ey * v;
@@ -1358,23 +1575,42 @@ class Main extends Phaser.Scene {
       let touch = e.boss && e.ai.state === 'dash' ? Math.round(e.touch * BOSS.dashMult) : e.touch;
       if (e.boss) touch = Math.round(touch * bossAtkFloorMult(this.floor));
 
-      // 3. 接触ダメージ判定（プレイヤーまたは味方ミニオンへ攻撃）
+      // 接触ダメージ判定（★ 透明無敵中 e.isInvincible === true の場合はノーダメージ）
       if (d < nearestTarget.r + e.r) {
-        if (nearestTarget.isPlayer && now > this.inv && now > this.dodgeUntil) {
+        if (nearestTarget.isPlayer && !e.isInvincible && now > this.inv && now > this.dodgeUntil) {
           this.hurtPlayer(touch);
           this.inv = now + 600;
-        } else if (!nearestTarget.isPlayer) {
-          // 味方ミニオンがダメージを受ける処理
+        } else if (!nearestTarget.isPlayer && !e.isInvincible) {
           const minion = nearestTarget.obj;
           if (now > (minion.invUntil || 0)) {
-            minion.invUntil = now + 400; // 被弾後の無敵時間
+            minion.invUntil = now + 400;
             minion.hp -= touch;
             this.floatText(minion.c.x, minion.c.y - 10, String(touch), '#ff9a8a', '12px', 500);
-            
-            // HPが0になったら消滅＆プレイヤーHP15%回復
             if (minion.hp <= 0) {
               this.onKill(minion);
             }
+          }
+        }
+      }
+
+      // 他のレアモンスター（アビス・ギガント、ヘルハウンド）のスキル
+      if (e.isRare && e.rareSkill !== 'blinkDash') {
+        if (now >= (e.nextSkillTime || 0)) {
+          e.nextSkillTime = now + 3500;
+          if (e.rareSkill === 'pull') {
+            const pullFactor = 0.30;
+            const targetX = p.x + (e.c.x - p.x) * pullFactor;
+            const targetY = p.y + (e.c.y - p.y) * pullFactor;
+
+            if (free(targetX, p.y, 11)) p.x = targetX;
+            if (free(p.x, targetY, 11)) p.y = targetY;
+
+            this.floatText(e.c.x, e.c.y - 20, '🧲 重力吸引！', '#ff0055', '14px', 600);
+          } else if (e.rareSkill === 'flameRing') {
+            for (let i = 0; i < 8; i++) {
+              this.fireShot(e.c.x, e.c.y, (Math.PI * 2 / 8) * i, 180);
+            }
+            this.floatText(e.c.x, e.c.y - 20, '🔥 獄炎波！', '#ff5500', '14px', 600);
           }
         }
       }
@@ -1383,10 +1619,10 @@ class Main extends Phaser.Scene {
     if (this.hp <= 0 && !this.leaving) this.die();
     p.setAlpha(this.dodge || now < this.dodgeUntil ? 0.35 : now < this.inv ? 0.5 : 1);
     
-    // HPバーの描画処理（味方ミニオンを紫色で表示）
+    // HPバーの描画処理（透明時はHPバーも消す）
     this.bars.clear();
     for (const e of this.enemies) {
-      if (e.hp <= 0) continue;
+      if (e.hp <= 0 || (e.isRare && e.isInvincible)) continue;
       const w = e.r * 2.8, bx = e.c.x - w / 2, by = e.c.y - e.r - 10;
       this.bars.fillStyle(0x000000, 0.6).fillRect(bx, by, w, 4);
       const barColor = e.isAllyMinion ? 0xd98cff : (e.stunUntil && now < e.stunUntil ? 0xffff00 : (e.boss ? BOSS.color : ENEMY.color));
@@ -1606,9 +1842,9 @@ class Main extends Phaser.Scene {
     return true;
   }
 
-  fireShot(x, y, a, speed) {
+  fireShot(x, y, a, speed, isDragonBreath = false) {
     const o = this.add.circle(x, y, 6, 0xff6a6a).setStrokeStyle(2, 0xffffff).setDepth(1);
-    this.shots.push({ o, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, left: 520 });
+    this.shots.push({ o, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, left: 520, isDragonBreath });
   }
 
   updateShots(dt, now) {
@@ -1621,6 +1857,13 @@ class Main extends Phaser.Scene {
         const dmg = Math.round(BOSS.shotDmg * bossAtkFloorMult(this.floor));
         this.hurtPlayer(dmg);
         this.inv = now + 600;
+
+        // --- 追加：ドラゴンのブレス命中時、ボスのHP10%回復 ---
+        if (b.isDragonBreath && this.boss && this.boss.hp > 0) {
+          const healAmount = Math.round(this.boss.max * 0.05);
+          this.boss.hp = Math.min(this.boss.max, this.boss.hp + healAmount);
+          this.floatText(this.boss.c.x, this.boss.c.y - this.boss.r - 20, `吸血 +${healAmount}`, '#7cf0a0', '18px', 1000);
+        }
       }
       const gone = hit || b.left <= 0 || solid(b.o.x, b.o.y);
       if (gone) b.o.destroy();
@@ -1729,33 +1972,54 @@ class Main extends Phaser.Scene {
 
   damage(e, dmg) {
     if (e.hp <= 0) return;
+
+    // ★ シャドウ・ファントムの透明無敵判定（飛んできてからの実体化3秒間以外はダメージ無効）
+    if (e.isRare && e.isInvincible) {
+      this.floatText(e.c.x, e.c.y - 20, '無敵!', '#7000ff', '14px', 400);
+      return;
+    }
+
     if (e.boss && e.trait) {
-      // ⭕ rangedTypes を正しく配列で定義して includes でチェック
       const rangedTypes = ['bow', 'eruption_wand', 'lightning_staff'];
       const isRanged = !!(weapon && rangedTypes.includes(weapon.type));
 
-      // 射撃耐性 (50%カット)
       if (e.trait === 'range_cut_50' && isRanged) {
         dmg = Math.round(dmg * 0.5);
         this.floatText(e.c.x, e.c.y - 10, '耐性 -50%', '#88aaff', '12px', 400);
       }
-      // 反撃の刃 (近接ダメージの20%を反射)
       if (e.trait === 'counter_reflect' && !isRanged) {
         const reflectDmg = Math.max(1, Math.round(dmg * 0.2));
         this.hurtPlayer(reflectDmg);
         this.floatText(this.p.x, this.p.y - 15, `反撃 ${reflectDmg}`, '#ff4444', '14px', 600);
       }
-      // 魔力反応 (スキルダメージを受けた際に追尾弾で反撃)
       if (e.trait === 'skill_counter' && this.isCastingSkill) {
         BOSS_PATTERNS.homing.start(this, e, e.ai && e.ai.rage);
         this.floatText(e.c.x, e.c.y - 30, '⚡魔力反応！', '#b15cff', '14px', 600);
       }
-      // アンチ・レンジ (遠距離攻撃を受けるとプレイヤーへ瞬間移動)
       if (e.trait === 'anti_range' && isRanged && Math.random() < 0.6) {
         const warpAng = Math.random() * Math.PI * 2;
         e.c.x = this.p.x + Math.cos(warpAng) * 40;
         e.c.y = this.p.y + Math.sin(warpAng) * 40;
         this.floatText(e.c.x, e.c.y - 30, '✦アンチレンジワープ！', '#4fd1c5', '14px', 800);
+      }
+      if (e.trait === 'dragon_emperor') {
+        if (!isRanged) {
+          dmg = Math.round(dmg * 0.5);
+          this.floatText(e.c.x, e.c.y - 10, '近接耐性 -50%', '#ff9a8a', '12px', 400);
+
+          if (weapon) {
+            this.useWeapon(2);
+            this.floatText(this.p.x, this.p.y - 15, '⚔️耐久激甚消耗!', '#ff9a8a', '12px', 400);
+          }
+
+          if (Math.random() < 0.10) {
+            this.dragonWarpBreath(e);
+          }
+        } else {
+          if (Math.random() < 0.15) {
+            this.dragonWarpBreath(e);
+          }
+        }
       }
     }
 
@@ -1764,17 +2028,14 @@ class Main extends Phaser.Scene {
       return;
     }
 
-    // ★ 1. ヒット位置にスパーク＆光の粒子を発生させる
     this.hitEffect(e.c.x, e.c.y, e.boss ? 0xb15cff : 0xffe08a);
 
-    // ★ 2. 敵を一瞬だけ白くフラッシュさせる（修正点: fillColor を直接書き換え）
     const originalColor = e.c.fillColor;
-    e.c.fillColor = 0xffffff; // 白にフラッシュ
+    e.c.fillColor = 0xffffff;
     this.time.delayedCall(70, () => {
-      if (e.c && e.c.active) e.c.fillColor = originalColor; // 元の色に戻す
+      if (e.c && e.c.active) e.c.fillColor = originalColor;
     });
 
-    // ★ 3. 微細なヒットノックバック（敵をわずかに押し戻す手応え）
     const angleFromPlayer = Math.atan2(e.c.y - this.p.y, e.c.x - this.p.x);
     const pushDist = e.boss ? 2 : 6;
     const kx = e.c.x + Math.cos(angleFromPlayer) * pushDist;
@@ -1792,6 +2053,19 @@ class Main extends Phaser.Scene {
     e.c.destroy();
     this.gainExp((EXP_PER_KILL + 10 * this.floor) * (e.boss ? BOSS.expMult : 1));
     this.gainGold(e);
+    if (e.isRare) {
+      if (Math.random() < 0.5) {
+        // パターンA: 最大HPを100増加
+        PLAYER.hpPts += 10; // 1pt = 10HP なので 10pt分（+100）加算
+        this.hp += 100;    // 現在のHPもあわせて100回復
+        this.floatText(this.p.x, this.p.y - 45, '✦ 最大HP +100 増加！', '#7cf0a0', '18px', 1500);
+      } else {
+        // パターンB: 基礎攻撃力を50増加
+        PLAYER.atkPts += 10; // 1pt = 5ATK なので 10pt分（+50）加算
+        this.floatText(this.p.x, this.p.y - 45, '✦ 攻撃力 +50 増加！', '#ff8844', '18px', 1500);
+      }
+      saveGame(); // セーブデータにも即時保存
+    }
     // ★ 魔力結晶が壊れた場合の判定
     if (e.isCrystal) {
       const remainingCrystals = this.enemies.filter(x => x.isCrystal && x.hp > 0 && x !== e).length;
@@ -1820,7 +2094,7 @@ class Main extends Phaser.Scene {
     if (e.boss) this.onBossDefeated();
     else if (!e.isAllyMinion && !e.isCrystal && !e.isMinion && Math.random() < DROP_RATE) this.giveArmor(randomSlot());
       
-}
+  }
     
 
   onBossDefeated() {
@@ -1988,6 +2262,35 @@ class Main extends Phaser.Scene {
     this.popup('バッグが満杯のため入手できません', '#ff9a8a');
   }
 }
+  // --- 修正：行動割り込み対応ワープ＋ブレス反撃 ---
+  dragonWarpBreath(e) {
+    // 現在の行動・予知攻撃を強制作動リセット（割り込み処理）
+    if (e.ai) {
+      e.ai.state = 'chase';
+      e.ai.next = this.time.now + 800;
+    }
+
+    // プレイヤーの周囲にワープ
+    const warpAng = Math.random() * Math.PI * 2;
+    e.c.x = this.p.x + Math.cos(warpAng) * 45;
+    e.c.y = this.p.y + Math.sin(warpAng) * 45;
+    this.floatText(e.c.x, e.c.y - 30, '🔥皇帝の割り込み強襲！', '#ff4444', '16px', 800);
+
+    // 即座にプレイヤーへ向けて強襲ブレス（吸血属性付き扇状射撃）を発射
+    const aimAng = Math.atan2(this.p.y - e.c.y, this.p.x - e.c.x);
+    const n = e.ai && e.ai.rage ? 7 : 5;
+    const FAN_SPREAD = 0.9;
+
+    this.time.delayedCall(100, () => {
+      if (e.hp > 0) {
+        for (let i = 0; i < n; i++) {
+          const bAngle = aimAng + (i / (n - 1) - 0.5) * FAN_SPREAD;
+          this.fireShot(e.c.x, e.c.y, bAngle, 260, true); // 第5引数 isDragonBreath: true
+        }
+      }
+    });
+  }
+  
 }
 
 class HudScene extends Phaser.Scene {
@@ -2831,11 +3134,132 @@ class GrimoireScene extends MenuScene {
     this.render();
   }
 }
+class PatchNotesScene extends MenuScene {
+  constructor() { super('patch_notes'); }
 
+  create() {
+    const w = this.scale.width, h = this.scale.height;
+    
+    // 1. 暗い背景
+    this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.85).setDepth(100);
+
+    // 2. ダイアログ枠
+    const boxW = 560, boxH = 400;
+    const boxX = w / 2 - boxW / 2;
+    const boxY = h / 2 - boxH / 2;
+    
+    const bgBox = this.add.rectangle(w / 2, h / 2, boxW, boxH, 0x1d2230)
+      .setStrokeStyle(2, 0x4fd1c5)
+      .setDepth(101);
+
+    // 3. タイトル（固定表示）
+    this.add.text(w / 2, boxY + 30, PATCH_NOTES[0] || '✦ アップデート情報 ✦', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#4fd1c5', fontWeight: 'bold'
+    }).setOrigin(0.5).setDepth(102);
+
+    // 4. スクロール領域（マスクエリア）の設定
+    const viewX = boxX + 30;
+    const viewY = boxY + 60;
+    const viewW = boxW - 60;
+    const viewH = 260; // 表示領域の高さ
+
+    // ★ マスク用のグラフィックスを作成（シーンに追加せず非表示マスクとして利用）
+    const maskShape = this.make.graphics();
+    maskShape.fillStyle(0xffffff);
+    maskShape.fillRect(viewX, viewY, viewW, viewH);
+    const mask = maskShape.createGeometryMask();
+
+    // 5. アップデート本文テキスト
+    const bodyText = PATCH_NOTES.slice(1).join('\n');
+    const contentText = this.add.text(viewX, viewY, bodyText, {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '13px',
+      color: '#e8eaf0',
+      lineSpacing: 6,
+      wordWrap: { width: viewW - 20 }
+    }).setDepth(102);
+
+    // ★ ここでテキストにマスクを確実にかける！
+    contentText.setMask(mask);
+
+    // スクロールの境界値を計算
+    const minY = viewY - Math.max(0, contentText.height - viewH);
+    const maxY = viewY;
+
+    // 6. スクロールバー
+    const trackX = viewX + viewW - 5;
+    this.add.line(0, 0, trackX, viewY, trackX, viewY + viewH, 0x4a5568)
+      .setOrigin(0, 0)
+      .setDepth(102);
+    
+    const thumbH = Math.max(20, (viewH / Math.max(1, contentText.height)) * viewH);
+    const thumb = this.add.rectangle(trackX, viewY, 6, thumbH, 0x4fd1c5)
+      .setOrigin(0.5, 0)
+      .setDepth(103);
+
+    const updateScroll = (newY) => {
+      const clampedY = Phaser.Math.Clamp(newY, minY, maxY);
+      contentText.y = clampedY;
+
+      if (contentText.height > viewH) {
+        const progress = (maxY - clampedY) / (maxY - minY || 1);
+        thumb.y = viewY + progress * (viewH - thumbH);
+        thumb.setVisible(true);
+      } else {
+        thumb.setVisible(false);
+      }
+    };
+
+    updateScroll(viewY);
+
+    // 7. マウスホイールによるスクロール
+    this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY) => {
+      updateScroll(contentText.y - deltaY * 0.5);
+    });
+
+    // 8. ドラッグ操作によるスクロール
+    let isDragging = false;
+    let startY = 0;
+    let startTextY = 0;
+
+    this.input.on('pointerdown', (pointer) => {
+      if (pointer.x >= viewX && pointer.x <= viewX + viewW && pointer.y >= viewY && pointer.y <= viewY + viewH) {
+        isDragging = true;
+        startY = pointer.y;
+        startTextY = contentText.y;
+      }
+    });
+
+    this.input.on('pointermove', (pointer) => {
+      if (isDragging) {
+        const dy = pointer.y - startY;
+        updateScroll(startTextY + dy);
+      }
+    });
+
+    this.input.on('pointerup', () => { isDragging = false; });
+
+    // 9. 閉じるボタン（テキストより前面・枠の底に配置）
+    this.items = [];
+    const closeBtn = this.add.text(w / 2, boxY + boxH - 30, '確認してゲームを始める', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff',
+      backgroundColor: '#2a3142',
+      padding: { x: 16, y: 8 }
+    }).setOrigin(0.5).setDepth(105).setInteractive({ useHandCursor: true });
+
+    closeBtn.on('pointerdown', () => this.close());
+    this.items.push(closeBtn);
+    
+    this.input.keyboard.addKey('ESC').on('down', () => this.close());
+    this.input.keyboard.addKey('SPACE').on('down', () => this.close());
+  }
+}
 new Phaser.Game({
   type: Phaser.AUTO, parent: 'game', width: 800, height: 540, backgroundColor: '#0b0d12',
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_HORIZONTALLY },
-  scene: [Main, HudScene, PauseScene, StatScene, BackpackScene, BlacksmithScene, ShopScene, InnScene, StorageScene, GrimoireScene]
+  scene: [Main, HudScene, PauseScene, StatScene, BackpackScene, BlacksmithScene, ShopScene, InnScene, StorageScene, GrimoireScene, PatchNotesScene]
 });
 </script>
 </body>
