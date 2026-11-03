@@ -551,7 +551,7 @@ const EQUIPPED = {
   ...Object.fromEntries(SLOT_KEYS.map(s => [s, null])),
   sub_weapon: null // サブ武器枠
 };
-// const PACK_COLS = 5, PACK_ROWS = 4, SLOT_ORDER = ['weapon', 'sub_weapon', ...SLOT_KEYS.filter(k => k !== 'sub_weapon'), 'artifact'];
+
 
 const ARMOR_VARIATIONS = {
   helmet: [
@@ -958,6 +958,15 @@ const BOSS_PATTERNS = {
     }
   }
 };
+const BOSS_FLOORS = {
+  25: { type: 'golem',        trait: 'range_cut_50',   name: '【射撃耐性】ゴーレム・ガーディアン' },
+  35: { type: 'ninja',        trait: 'counter_reflect',  name: '【反撃の刃】影の暗殺者 ニンジャ' },
+  45: { type: 'elementalist', trait: 'skill_counter',    name: '【魔力反応】魔導王 エレメンタリスト' },
+  55: { type: 'golem',        trait: 'anti_range',       name: '【結界の守護者】アンチ・レンジゴーレム' },
+  60: { type: 'dragon',       trait: 'anti_range',       name: '【暴君】真紅の皇帝 レッドドラゴン' }
+};
+const DEFAULT_BOSS_CONFIG = { type: 'golem', trait: null, name: '階層の番人' };
+
 
 class Main extends Phaser.Scene {
   constructor() { super('main'); }
@@ -1036,9 +1045,25 @@ class Main extends Phaser.Scene {
     // 〇 修正後のコード
     if (isSub(this.floor)) {
       const hpMult = isTenFloor(this.floor) ? BOSS.hpMultSpecial : BOSS.hpMult;
+      const baseFloor = Math.floor(this.floor);
+      const bossConfig = BOSS_FLOORS[baseFloor] || {
+        ...DEFAULT_BOSS_CONFIG,
+        trait: ['range_cut_50', 'counter_reflect', 'skill_counter', 'anti_range'][Math.floor(Math.random() * 4)]
+      };
+
       this.boss = this.spawnEnemy(this.stairs.x, this.stairs.y, Math.round(eh * hpMult), BOSS, true);
+      this.boss.bossType = bossConfig.type;
+      this.boss.trait = bossConfig.trait;
+      this.boss.bossName = bossConfig.name;
+
+      // 暗幕ステルス奇襲（ニンジャ）の初期設定
+      if (bossConfig.type === 'ninja') {
+        this.boss.stealth = true;
+        this.boss.c.setAlpha(0);
+      }
+    }
 }
-  }
+
 
   spawnEnemy(x, y, hp, def = ENEMY, boss = false) {
     const c = this.add.circle(x, y, def.r, def.color).setDepth(boss ? 1 : 0);
@@ -1269,6 +1294,21 @@ class Main extends Phaser.Scene {
       // 1. 味方ミニオンの行動処理（敵を追従＆攻撃）
       if (e.isAllyMinion) {
         const targets = this.enemies.filter(x => x !== e && !x.isAllyMinion && x.hp > 0);
+      if (e.boss && e.bossType === 'ninja' && e.stealth) {
+        const distToPlayer = Math.hypot(p.x - e.c.x, p.y - e.c.y);
+        if (distToPlayer < 120) {
+          e.stealth = false;
+          e.c.setAlpha(1);
+            // プレイヤー背後にワープして一閃
+          const ambushAng = this.ang + Math.PI;
+          e.c.x = p.x + Math.cos(ambushAng) * 30;
+          e.c.y = p.y + Math.sin(ambushAng) * 30;
+          const ambushDmg = Math.round(e.touch * 2.0 * bossAtkFloorMult(this.floor));
+          this.hurtPlayer(ambushDmg);
+          this.floatText(e.c.x, e.c.y - 30, '⚡奇襲一閃！', '#ff4444', '18px', 1000);
+          this.cameras.main.shake(150, 0.01);
+        }
+      }
         if (targets.length > 0) {
           const target = targets.reduce((nearest, curr) => {
             const d1 = Math.hypot(nearest.c.x - e.c.x, nearest.c.y - e.c.y);
@@ -1438,6 +1478,7 @@ class Main extends Phaser.Scene {
     const n = this.time.now;
     if (n < this.nextSkill || this.dodge || this.leaving) return;
     this.nextSkill = n + weapon.skill.cd;
+    this.isCastingSkill = true;
     BEHAVIORS[weapon.type].skill(this, atkTotal(this));
     this.useWeapon(DURABILITY.weaponSkill);
   }
@@ -1506,8 +1547,19 @@ class Main extends Phaser.Scene {
       if (now < ai.next || d > BOSS.attackRange) return false;
 
       let names = Object.keys(BOSS_PATTERNS).filter(k => k !== ai.last);
+      if (e.bossType === 'ninja') {
+        names = names.filter(k => ['charge', 'fan'].includes(k));
+      } else if (e.bossType === 'elementalist') {
+        names = names.filter(k => ['homing', 'eruption', 'ring'].includes(k));
+      } else if (e.bossType === 'dragon') {
+        names = names.filter(k => ['blasterLaser', 'stomp', 'fan'].includes(k));
+      } else if (e.bossType === 'golem') {
+        names = names.filter(k => ['stomp', 'charge', 'ring'].includes(k));
+      }
 
       if (this.floor < 3.5 || this.enemies.filter(x => !x.boss).length >= BOSS.maxMinions) {
+      
+
         names = names.filter(k => k !== 'call');
       }
       if (this.floor < 3.5) {
@@ -1677,6 +1729,36 @@ class Main extends Phaser.Scene {
 
   damage(e, dmg) {
     if (e.hp <= 0) return;
+    if (e.boss && e.trait) {
+      // ⭕ rangedTypes を正しく配列で定義して includes でチェック
+      const rangedTypes = ['bow', 'eruption_wand', 'lightning_staff'];
+      const isRanged = !!(weapon && rangedTypes.includes(weapon.type));
+
+      // 射撃耐性 (50%カット)
+      if (e.trait === 'range_cut_50' && isRanged) {
+        dmg = Math.round(dmg * 0.5);
+        this.floatText(e.c.x, e.c.y - 10, '耐性 -50%', '#88aaff', '12px', 400);
+      }
+      // 反撃の刃 (近接ダメージの20%を反射)
+      if (e.trait === 'counter_reflect' && !isRanged) {
+        const reflectDmg = Math.max(1, Math.round(dmg * 0.2));
+        this.hurtPlayer(reflectDmg);
+        this.floatText(this.p.x, this.p.y - 15, `反撃 ${reflectDmg}`, '#ff4444', '14px', 600);
+      }
+      // 魔力反応 (スキルダメージを受けた際に追尾弾で反撃)
+      if (e.trait === 'skill_counter' && this.isCastingSkill) {
+        BOSS_PATTERNS.homing.start(this, e, e.ai && e.ai.rage);
+        this.floatText(e.c.x, e.c.y - 30, '⚡魔力反応！', '#b15cff', '14px', 600);
+      }
+      // アンチ・レンジ (遠距離攻撃を受けるとプレイヤーへ瞬間移動)
+      if (e.trait === 'anti_range' && isRanged && Math.random() < 0.6) {
+        const warpAng = Math.random() * Math.PI * 2;
+        e.c.x = this.p.x + Math.cos(warpAng) * 40;
+        e.c.y = this.p.y + Math.sin(warpAng) * 40;
+        this.floatText(e.c.x, e.c.y - 30, '✦アンチレンジワープ！', '#4fd1c5', '14px', 800);
+      }
+    }
+
     if (e.boss && e.isShielded) {
       this.floatText(e.c.x, e.c.y - 24, 'GUARD!', '#4fd1c5', '14px', 400);
       return;
@@ -1737,7 +1819,8 @@ class Main extends Phaser.Scene {
 
     if (e.boss) this.onBossDefeated();
     else if (!e.isAllyMinion && !e.isCrystal && !e.isMinion && Math.random() < DROP_RATE) this.giveArmor(randomSlot());
-  }
+      
+}
     
 
   onBossDefeated() {
@@ -1938,7 +2021,15 @@ class HudScene extends Phaser.Scene {
     }).setDepth(11);
 
     // 画面中央上のボスHP数値テキスト
+    // 画面中央上のボスHP数値テキスト＆ボス名テキスト
     const w = this.scale.width, h = this.scale.height;
+    this.bossNameText = this.add.text(w / 2, 16, '', { 
+      fontFamily: 'system-ui, sans-serif', 
+      fontSize: '13px', 
+      color: '#ffd36a', 
+      fontWeight: 'bold' 
+    }).setOrigin(0.5).setDepth(12);
+
     this.bossHpText = this.add.text(w / 2, 38, '', { 
       fontFamily: 'system-ui, sans-serif', 
       fontSize: '11px', 
@@ -2071,12 +2162,13 @@ class HudScene extends Phaser.Scene {
       const bRatio = Math.min(1, Math.max(0, bCurHp / bMaxHp));
 
       const bBarWidth = 360, bBarHeight = 16;
-      const bBarX = (w - bBarWidth) / 2, bBarY = 24;
+      const bBarX = (w - bBarWidth) / 2, bBarY = 28;
 
+      // パネルの高さを少し広げて名前枠を確保
       this.uiGfx.fillStyle(0x0e1015, 0.85);
-      this.uiGfx.fillRoundedRect(bBarX - 12, bBarY - 14, bBarWidth + 24, bBarHeight + 24, 6);
+      this.uiGfx.fillRoundedRect(bBarX - 12, bBarY - 22, bBarWidth + 24, bBarHeight + 30, 6);
       this.uiGfx.lineStyle(2, 0xb15cff, 0.8);
-      this.uiGfx.strokeRoundedRect(bBarX - 12, bBarY - 14, bBarWidth + 24, bBarHeight + 24, 6);
+      this.uiGfx.strokeRoundedRect(bBarX - 12, bBarY - 22, bBarWidth + 24, bBarHeight + 30, 6);
 
       this.uiGfx.fillStyle(0x1a202c, 1);
       this.uiGfx.fillRect(bBarX, bBarY, bBarWidth, bBarHeight);
@@ -2088,10 +2180,15 @@ class HudScene extends Phaser.Scene {
       this.uiGfx.lineStyle(1, 0xffffff, 0.6);
       this.uiGfx.strokeRect(bBarX, bBarY, bBarWidth, bBarHeight);
 
-      this.bossHpText.setText(`BOSS HP ${bCurHp} / ${bMaxHp}${boss.isShielded ? ' [BARRIER]' : ''}`);
+      // ボス名のテキスト更新
+      // ボス名のテキスト更新 (オプショナルチェイニング `?.` で安全化)
+      if (this.bossNameText) this.bossNameText.setText(boss.bossName || '階層の番人');
+      if (this.bossHpText) this.bossHpText.setText(`HP ${bCurHp} / ${bMaxHp}${boss.isShielded ? ' [BARRIER]' : ''}`);
     } else {
-      this.bossHpText.setText('');
+      if (this.bossNameText) this.bossNameText.setText('');
+      if (this.bossHpText) this.bossHpText.setText('');
     }
+  
 
     // ==========================================
     // 3. 画面左下：現在の装備＆耐久値表示パネル
