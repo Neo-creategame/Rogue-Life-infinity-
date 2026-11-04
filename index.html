@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Rogue-Life-infinity-</title>
+<title>ダンジョン試作</title>
 <style>
 :root{--bg:#f2f3f6;--fg:#1d2230;--sub:#596072;color-scheme:light}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1015;--fg:#e8eaf0;--sub:#a0a7b8;color-scheme:dark}}
@@ -19,7 +19,7 @@ h1{font-size:1.15rem;margin:0 0 12px}
 </head>
 <body>
 <main>
-  <h1>Rogue-Life-infinity-</h1>
+  <h1>ダンジョン試作</h1>
   <div id="game"></div>
   <p class="hint">移動:WASD または矢印キー / 攻撃:クリックまたはスペース(マウスの向きに斬る) / スキル:E(武器ごとに違う) / バッグ:I(ドラッグで装備・外す・入れ替え。武器の持ち替えはここだけ) / 回避:Shift(移動方向にダッシュ、その間は無敵) / 消耗品:Q(小回復)・R(全回復、ダンジョン内で使用) / 町のお店・宿屋・倉庫の入口でF / 階段・入口の上で F:階層移動(中間の階 X.5F にいるボスを倒すと、次の階への階段が開く) / Tab:メニュー(町へ戻る・攻略済みの階層を選ぶ) / 武器を作り直す:T(武器の攻撃力がランダムに変わる)。 / 装備:兜・胸・脚・靴の4部位。敵を倒すと一定確率で落とし、バッグに入ります。ボスは赤い警告のあとに特殊攻撃(弾・突進)をしてくるので、動いてかわしましょう。ボスは武器を10%の確率で落とし、ボスだけが落とす遺物(I画面の『遺物』枠に装備)を一定確率で落とします。遺物を装備するとボスに与えるダメージが増えます。数値は深い階ほど高くなります。敵を倒すとゴールドが入り、町の鍛冶台(F)で装備の修理・強化ができます。装備で最大HPが増え、受けるダメージが減ります。武器は攻撃のたび、防具はダメージを受けるたびに耐久値が減り、0になると壊れて効果がなくなります(町の鍛冶屋で修理できます)。敵を倒すとEXPが入り、レベルアップごとに1ポイント。町のステータス台(F)で最大HPか攻撃力に振れます。赤い丸は敵で、近づくと追いかけてきて、触れるとダメージを受けます。キーボード操作のPC向けです。</p>
 </main>
@@ -78,7 +78,7 @@ const TOWN_SHOPS = [['お店', 6, 5], ['宿屋', 17, 5], ['鍛冶屋', 28, 5], [
 // ---- セーブ＆ロード機能 ----
 const SAVE_KEY = 'alone_rpg_save_data_v1';
 // バージョン管理と更新履歴
-const GAME_VERSION = '1.7.1'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
+const GAME_VERSION = '1.8.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
 const VERSION_KEY = 'alone_rpg_seen_version';
 /*'✦ Ver 1..0 アップデート情報 ✦',
   '',
@@ -86,6 +86,15 @@ const VERSION_KEY = 'alone_rpg_seen_version';
   '・',
   '',*/
 const PATCH_NOTES = [
+  '✦ Ver 1.8.0 アップデート情報 ✦',
+  ''
+  '【新要素】',
+  '・スペルブックの実装！！レアモンスターからドロップ！！',
+  ''
+  '【修正】',
+  '・再起動時にHPが全回復するのを修正',
+  '・スペルブックの強さを調整',
+  '',
   '✦ Ver 1.7.1 アップデート情報 ✦',
   '',
   '【修正】',
@@ -1317,7 +1326,16 @@ class Main extends Phaser.Scene {
     const r0 = rooms[0];
     this.start = { x: (r0.x + (r0.w >> 1)) * T + T / 2, y: (r0.y + (r0.h >> 1)) * T + T / 2 };
     this.p = this.add.circle(this.start.x, this.start.y, 11, 0x6fb6ff).setDepth(2);
-    this.hp = this.carryHp != null ? this.carryHp : maxHp();
+    if (this.carryHp != null) {
+      this.hp = this.carryHp;
+    } else if (PLAYER.currentHp != null && PLAYER.currentHp > 0) {
+      this.hp = Math.min(PLAYER.currentHp, maxHp());
+    } else {
+      this.hp = maxHp();
+    }
+    this.inv = this.time.now + 800;
+    const savedHp = PLAYER.currentHp;
+    this.hp = this.carryHp != null ? this.carryHp : (savedHp != null ? savedHp : maxHp());
     this.inv = this.time.now + 800;
     this.dodge = null; this.dodgeUntil = 0; this.nextDodge = 0; this.leaving = false;
     this.cameras.main.fadeIn(300);
@@ -1378,7 +1396,8 @@ class Main extends Phaser.Scene {
 
   update(t, dt) {
     const k = this.keys, p = this.p, cam = this.cameras.main, now = this.time.now;
-    if (Phaser.Input.Keyboard.JustDown(k.pause) && !this.leaving) { this.scene.pause(); this.scene.launch('pause', { floor: this.floor }); return; }
+    PLAYER.currentHp = this.hp;
+    if (Phaser.Input.Keyboard.JustDown(k.pause) && !this.leaving) { saveGame(); this.scene.pause(); this.scene.launch('pause', { floor: this.floor }); return; }
 
     if (this.floor !== 0 && artifactEq && artifactEq.typeKey === 'regen' && this.hp < maxHp()) {
       this.regenTimer = (this.regenTimer || 0) + dt;
@@ -1424,20 +1443,20 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.atk)) this.attack();
     if (Phaser.Input.Keyboard.JustDown(k.skill)) this.skill();
     
-    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
+    /*if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon2)) this.obtainBossWeapon('eruption_wand');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon3)) this.obtainBossWeapon('dragon_chain');
-    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');
+    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');*/
     if (Phaser.Input.Keyboard.JustDown(k.swap)) this.swapWeapon();
     if (Phaser.Input.Keyboard.JustDown(k.stock1)) this.castSpellbookSkill(0);
     if (Phaser.Input.Keyboard.JustDown(k.stock2)) this.castSpellbookSkill(1);
     if (Phaser.Input.Keyboard.JustDown(k.stock3)) this.castSpellbookSkill(2);
-    if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
-    if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
+    //if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
+    /*if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
       SAVE.cleared = Math.max(SAVE.cleared, 60);
       saveGame();
       this.travel(60, maxHp(), 'デバッグ: 60Fへワープしました');
-    }
+    }*/
 
     if (Phaser.Input.Keyboard.JustDown(k.subSkill)) this.subSkill();
     if (Phaser.Input.Keyboard.JustDown(k.potF)) this.usePotion('full');
@@ -1657,6 +1676,7 @@ class Main extends Phaser.Scene {
 
   die() {
     applyDeathPenalty();
+    PLAYER.currentHp = Math.max(1, Math.round(maxHp() * DEATH.respawnHpPct));
     saveGame();
     this.clearShots();
     this.travel(0, Math.max(1, Math.round(maxHp() * DEATH.respawnHpPct)), '倒れた…町で復活(未割り振りポイント没収・耐久半減)');
@@ -2064,6 +2084,17 @@ class Main extends Phaser.Scene {
         PLAYER.atkPts += 10; // 1pt = 5ATK なので 10pt分（+50）加算
         this.floatText(this.p.x, this.p.y - 45, '✦ 攻撃力 +50 増加！', '#ff8844', '18px', 1500);
       }
+      const hasSpellbook = (weapon && weapon.type === 'spellbook') || 
+                           (EQUIPPED.sub_weapon && EQUIPPED.sub_weapon.type === 'spellbook') ||
+                           BACKPACK.some(it => it && it.type === 'spellbook') ||
+                           STORAGE.some(it => it && it.type === 'spellbook');
+
+      if (!hasSpellbook) {
+        const spellbookItem = rollWeapon('spellbook', Math.max(1, this.floor));
+        if (addToPack(spellbookItem)) {
+          this.popup('📖 レアドロップ！【スペルブック】を入手！', '#d98cff', 1);
+        }
+      }
       saveGame(); // セーブデータにも即時保存
     }
     // ★ 魔力結晶が壊れた場合の判定
@@ -2232,7 +2263,7 @@ class Main extends Phaser.Scene {
   const setWeaponAtk = targetWeapon.atk || 100;
   const baseTotalAtk = Math.round((setWeaponAtk + PLAYER.atkPts * ATK_PER_PT) * (weapon.dur > 0 ? 1 : DURABILITY.brokenAtkMult));
   let mult = 1 + artifactStat('atkPct') / 100;
-  const spellDmg = Math.max(1, Math.round((baseTotalAtk * mult) / 3)); // 威力 1/3
+  const spellDmg = Math.max(1, Math.round((baseTotalAtk * mult) / 2)); // 威力 1/3
 
   // セットされた武器のスキルエフェクトを実行
   const behavior = BEHAVIORS[targetWeapon.type];
