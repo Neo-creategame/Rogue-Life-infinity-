@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Rogue-Life-infinity-</title>
+<title>Rogue-Life-infinity</title>
 <style>
 :root{--bg:#f2f3f6;--fg:#1d2230;--sub:#596072;color-scheme:light}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1015;--fg:#e8eaf0;--sub:#a0a7b8;color-scheme:dark}}
@@ -19,7 +19,7 @@ h1{font-size:1.15rem;margin:0 0 12px}
 </head>
 <body>
 <main>
-  <h1>Rogue-Life-infinity-</h1>
+  <h1>Rogue-Life-infinity</h1>
   <div id="game"></div>
   <p class="hint">移動:WASD または矢印キー / 攻撃:クリックまたはスペース(マウスの向きに斬る) / スキル:E(武器ごとに違う) / バッグ:I(ドラッグで装備・外す・入れ替え。武器の持ち替えはここだけ) / 回避:Shift(移動方向にダッシュ、その間は無敵) / 消耗品:Q(小回復)・R(全回復、ダンジョン内で使用) / 町のお店・宿屋・倉庫の入口でF / 階段・入口の上で F:階層移動(中間の階 X.5F にいるボスを倒すと、次の階への階段が開く) / Tab:メニュー(町へ戻る・攻略済みの階層を選ぶ) / 武器を作り直す:T(武器の攻撃力がランダムに変わる)。 / 装備:兜・胸・脚・靴の4部位。敵を倒すと一定確率で落とし、バッグに入ります。ボスは赤い警告のあとに特殊攻撃(弾・突進)をしてくるので、動いてかわしましょう。ボスは武器を10%の確率で落とし、ボスだけが落とす遺物(I画面の『遺物』枠に装備)を一定確率で落とします。遺物を装備するとボスに与えるダメージが増えます。数値は深い階ほど高くなります。敵を倒すとゴールドが入り、町の鍛冶台(F)で装備の修理・強化ができます。装備で最大HPが増え、受けるダメージが減ります。武器は攻撃のたび、防具はダメージを受けるたびに耐久値が減り、0になると壊れて効果がなくなります(町の鍛冶屋で修理できます)。敵を倒すとEXPが入り、レベルアップごとに1ポイント。町のステータス台(F)で最大HPか攻撃力に振れます。赤い丸は敵で、近づくと追いかけてきて、触れるとダメージを受けます。キーボード操作のPC向けです。</p>
 </main>
@@ -74,11 +74,11 @@ const nextFloor = f => f === 0 ? 1 : f + 0.5;
 const floorIdx = f => Math.round(f * 2) - 1;
 const floorList = c => { const out = []; for (let f = 1; f <= c + 1e-9; f += 0.5) out.push(f); return out; };
 const SAVE = { cleared: 0 };
-const TOWN_SHOPS = [['お店', 6, 5], ['宿屋', 17, 5], ['鍛冶屋', 28, 5], ['倉庫', 6, 14]];
+const TOWN_SHOPS = [['お店', 6, 5], ['宿屋', 17, 5], ['鍛冶屋', 28, 5], ['倉庫', 6, 14], ['ガチャ屋', 12, 14]];
 // ---- セーブ＆ロード機能 ----
 const SAVE_KEY = 'alone_rpg_save_data_v1';
 // バージョン管理と更新履歴
-const GAME_VERSION = '1.8.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
+const GAME_VERSION = '2.0.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
 const VERSION_KEY = 'alone_rpg_seen_version';
 /*'✦ Ver 1..0 アップデート情報 ✦',
   '',
@@ -86,6 +86,12 @@ const VERSION_KEY = 'alone_rpg_seen_version';
   '・',
   '',*/
 const PATCH_NOTES = [
+  '✦ Ver 2.0.0 アップデート情報 ✦',
+  '',
+  '【新要素】',
+  '・ガチャの追加1回5000ゴールドで目玉はLegendの無尾！！確率アップ中!!',
+  '・新たなスキルEXS（Extra Skill 大技）が登場！！敵を倒すとゲージが溜まっていき、ExSが溜まったらZで発動しよう！！',
+  '',
   '✦ Ver 1.8.0 アップデート情報 ✦',
   '',
   '【新要素】',
@@ -154,7 +160,10 @@ function saveGame() {
       equipped: EQUIPPED,
       backpack: BACKPACK,
       storage: STORAGE,
-      spellbookSlots: SPELLBOOK_SLOTS
+      spellbookSlots: SPELLBOOK_SLOTS,
+      exsGauge: exsGauge,
+      equippedExsId: equippedExsId,
+      ownedExs: { ...ownedExs }
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;
@@ -162,6 +171,20 @@ function saveGame() {
     console.error('セーブ失敗:', e);
     return false;
   }
+}
+// 「無尾」をバッグに追加してセーブする共通関数
+function getMubi() {
+  const mubiItem = rollWeapon('mubi');
+  const added = addToPack(mubiItem);
+  
+  if (added) {
+    saveGame(); // 入手成功時に自動セーブ
+    console.log('✦ [Legend] 無尾 を獲得しました！');
+  } else {
+    console.warn('バッグが満杯のため「無尾」を入手できませんでした。');
+  }
+  
+  return added; // 成功なら true, バッグ満杯なら false を返す
 }
 
 // データを読み込む
@@ -184,7 +207,16 @@ function loadGame() {
     if (data.spellbookSlots) {
       data.spellbookSlots.forEach((item, i) => { SPELLBOOK_SLOTS[i] = item; });
     }
-    
+    if (data.exsGauge != null) exsGauge = data.exsGauge;
+    if (data.equippedExsId) equippedExsId = data.equippedExsId;
+    if (data.ownedExs) Object.assign(ownedExs, data.ownedExs);
+    if (weapon && weapon.type === 'mubi') {
+      if (EQUIPPED.sub_weapon) {
+        addToPack(EQUIPPED.sub_weapon);
+        EQUIPPED.sub_weapon = null;
+      }
+      equippedExsId = null;
+    }
     return true;
   } catch (e) {
     console.error('ロード失敗:', e);
@@ -234,9 +266,174 @@ const WEAPONS = {
     speed: 650,
     skill: { name: 'サンダークロス', cd: 5000 }
   },
-  spellbook: { name: 'スペルブック', base: 30, cd: 300, range: 24, speedMult: 1.0, skill: { name: '魔術ストック', cd: 1000 }}
+  spellbook: { name: 'スペルブック', base: 30, cd: 300, range: 24, speedMult: 1.0, skill: { name: '魔術ストック', cd: 1000 }},
+  mubi: {
+    name: '無尾',
+    baseAtk: 3000,
+    base: 3000,
+    cd: 350,
+    range: 85,
+    speedMult: 1.1,
+    isLegend: true,
+    skill: { name: '蒼焔連突', cd: 4000 }
+  },
 
 };
+// ---- ExS (Extra Skill) の定義リスト ----
+// ---- ExS (Extra Skill) の定義リスト ----
+const EXS_LIST = {
+  // ★ SSR: 星見雅風 霜月・零式「霜雪一閃」
+  frost_iaijutsu: {
+    id: 'frost_iaijutsu',
+    name: '霜月・零式「霜雪一閃」',
+    rarity: 'SSR',
+    color: 0x00ffff,
+    desc: '無敵超高速突進後、画面全体の敵を氷結次元斬で切り刻む（2200% DMG + 3秒凍結）',
+    cast: (s, p, dmg) => {
+      const now = s.time.now;
+      const ptr = s.input.activePointer;
+      const wp = s.cameras.main.getWorldPoint(ptr.x, ptr.y);
+      const ang = Math.atan2(wp.y - p.y, wp.x - p.x);
+      
+      // 1. 完全無敵超高速突進
+      s.inv = now + 1500;
+      const dashDist = 280;
+      const endX = p.x + Math.cos(ang) * dashDist;
+      const endY = p.y + Math.sin(ang) * dashDist;
+      
+      // 突進時の残像描画
+      for (let i = 0; i <= 8; i++) {
+        const rx = p.x + (endX - p.x) * (i / 8);
+        const ry = p.y + (endY - p.y) * (i / 8);
+        if (free(rx, ry, 11)) { p.x = rx; p.y = ry; }
+        const gh = s.add.circle(p.x, p.y, 14, 0x00ffff, 0.6).setDepth(2);
+        s.tweens.add({ targets: gh, alpha: 0, duration: 300, onComplete: () => gh.destroy() });
+      }
+
+      // 2. 画面の青暗転と凍結演出
+      s.cameras.main.shake(300, 0.015);
+      const freezeBg = s.add.rectangle(p.x, p.y, s.scale.width * 2, s.scale.height * 2, 0x002244, 0.5).setDepth(3);
+      
+      // 3. 次元の亀裂・氷結次元斬炸裂（0.2秒後）
+      s.time.delayedCall(200, () => {
+        freezeBg.destroy();
+        s.cameras.main.shake(400, 0.025);
+
+        // 画面全体の一閃ライン
+        for (let i = 0; i < 12; i++) {
+          const rx1 = p.x + (Math.random() - 0.5) * 600;
+          const ry1 = p.y + (Math.random() - 0.5) * 600;
+          const rx2 = p.x + (Math.random() - 0.5) * 600;
+          const ry2 = p.y + (Math.random() - 0.5) * 600;
+          const slash = s.add.line(0, 0, rx1, ry1, rx2, ry2, 0xffffff).setLineWidth(4).setDepth(4);
+          s.tweens.add({ targets: slash, alpha: 0, duration: 250, onComplete: () => slash.destroy() });
+        }
+
+        // ダメージ＋3秒間全敵完全停止（凍結）
+        s.enemies.forEach(e => {
+          if (e.hp > 0 && !e.isAllyMinion) {
+            s.damage(e, Math.round(dmg * 22.0));
+            e.stunUntil = s.time.now + 3000;
+            s.floatText(e.c.x, e.c.y - 30, '❄️ 凍結！', '#00ffff', '16px', 1000);
+          }
+        });
+      });
+    }
+  },
+
+  // ★ SSR: 手下強化【百鬼夜行・冥界陣】
+  hell_legion: {
+    id: 'hell_legion',
+    name: '百鬼夜行・冥界陣',
+    rarity: 'SSR',
+    color: 0xb15cff,
+    desc: '冥界の騎士8体を一斉召喚し、狙った方向へ集団突進貫通攻撃（1200% DMG）',
+    cast: (s, p, dmg) => {
+      const ptr = s.input.activePointer;
+      const wp = s.cameras.main.getWorldPoint(ptr.x, ptr.y);
+      const ang = Math.atan2(wp.y - p.y, wp.x - p.x);
+
+      s.cameras.main.shake(250, 0.012);
+      s.floatText(p.x, p.y - 40, '✦ 百鬼夜行・冥界陣！', '#b15cff', '20px', 1200);
+
+      // 8体の召喚獣を一斉に突撃させる
+      for (let i = 0; i < 8; i++) {
+        const offset = (i - 3.5) * 24;
+        const sx = p.x + Math.cos(ang + Math.PI / 2) * offset;
+        const sy = p.y + Math.sin(ang + Math.PI / 2) * offset;
+
+        const m = s.spawnEnemy(sx, sy, 120, { r: 12, color: 0x9900ff, speed: 180, touchDmg: 0, aggro: 400 });
+        m.isAllyMinion = true;
+        m.nextAllyAtk = 0;
+
+        // 陣形一斉突進
+        const dashSpeed = 600;
+        const dashTimer = s.time.addEvent({
+          delay: 16,
+          repeat: 15,
+          callback: () => {
+            if (!m.c || !m.c.active) return;
+            const nx = m.c.x + Math.cos(ang) * (dashSpeed * 0.016);
+            const ny = m.c.y + Math.sin(ang) * (dashSpeed * 0.016);
+            if (free(nx, ny, 12)) { m.c.x = nx; m.c.y = ny; }
+
+            s.enemies.forEach(e => {
+              if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - m.c.x, e.c.y - m.c.y) < e.r + 16) {
+                s.damage(e, Math.round(dmg * 1.5));
+              }
+            });
+          }
+        });
+      }
+    }
+  },
+
+  // ★ SR: 広範囲壊滅【ギガ・ブレイカー】
+  giga_breaker: {
+    id: 'giga_breaker',
+    name: 'ギガ・ブレイカー',
+    rarity: 'SR',
+    color: 0xff4500,
+    desc: '前方広範囲を大剣の衝撃波で破砕（1500% DMG + 3秒スタン）',
+    cast: (s, p, dmg) => {
+      s.cameras.main.shake(200, 0.015);
+      s.strike(s.ang, Math.PI * 0.85, 180, Math.round(dmg * 15.0), 0xff4500, { knockback: 220, stunTime: 3000 });
+      s.floatText(p.x, p.y - 30, '💥 ギガ・ブレイカー！', '#ff4500', '18px', 1000);
+    }
+  },
+
+  // ★ SR: 連続一閃【疾風・影閃八重咲き】
+  shadow_flash: {
+    id: 'shadow_flash',
+    name: '疾風・影閃八重咲き',
+    rarity: 'SR',
+    color: 0xffd36a,
+    desc: '画面内の敵を8回連続ワープ突進斬り付け（合計 2000% DMG）',
+    cast: (s, p, dmg) => {
+      const targets = s.enemies.filter(e => e.hp > 0 && !e.isAllyMinion);
+      if (targets.length === 0) return;
+
+      s.inv = s.time.now + 1200;
+      for (let i = 0; i < 8; i++) {
+        s.time.delayedCall(i * 90, () => {
+          const target = targets[i % targets.length];
+          if (target && target.hp > 0) {
+            p.x = target.c.x - Math.cos(s.ang) * 20;
+            p.y = target.c.y - Math.sin(s.ang) * 20;
+            s.strike(0, Math.PI, 60, Math.round(dmg * 2.5), 0xffd36a);
+            s.cameras.main.shake(60, 0.005);
+          }
+        });
+      }
+    }
+  }
+};
+
+// セーブデータ・プレイヤーオブジェクトへの変数追加
+const EXS_GAUGE_MAX = 100;
+let exsGauge = 0; // ExSゲージ（0〜100）
+let equippedExsId = null;//'frost_iaijutsu'; // 初期セット中ExS
+let ownedExs = {};//{ frost_iaijutsu: 1 }; // 所持ExS一覧 { exsId: レベル }
 
 // ---- スペルブック専用スロットの状態管理 ----
 // 3つのスロットにセットされた武器オブジェクトを保持
@@ -294,7 +491,25 @@ const rollWeapon = (type, floor = 1) => {
   let name = baseDef.name;
   let atk = Math.round(baseDef.base * weaponFloorMult(floor));
   let cd = baseDef.cd;
-
+  if (baseDef.isLegend) {
+    return {
+      type: 'mubi',
+      name: baseDef.name,
+      baseAtk: baseDef.base,
+      cd: baseDef.cd,
+      range: baseDef.range,
+      speedMult: baseDef.speedMult,
+      speed: 500, // 他の武器同様にspeedプロパティを設定
+      skill: baseDef.skill,
+      slot: 'weapon', // 確実に武器スロットに設定
+      dur: 999,
+      durMax: 999,
+      lv: 0,
+      atk: 3000, // 固定攻撃力
+      isLegend: true,
+      rarity: 'Legend'
+    };
+  }
   // 通常武器の場合（WEAPON_VARIATIONS が存在する場合）はランダムバリエーションを適用
   if (WEAPON_VARIATIONS[type]) {
     const vars = WEAPON_VARIATIONS[type];
@@ -507,6 +722,82 @@ const BEHAVIORS = {
     attack: (s, dmg) => s.strike(s.ang, Math.PI * 0.25, weapon.range, dmg, 0xb15cff),
   // Eキーの標準スキル（案内表示用）
     skill: (s, dmg) => s.popup('1,2,3キーでストックスキルを発動！', '#d98cff')
+  },
+  mubi: {
+    // 通常攻撃：3段階コンボ（3段目がヒットした時に蒼焔+10）
+    attack: (s, dmg) => {
+      // ★ シーン本体（s）にコンボ数を確実に保存する
+      s.mubiCombo = ((s.mubiCombo || 0) % 3) + 1;
+      const isThird = s.mubiCombo === 3;
+      
+      const range = isThird ? weapon.range + 15 : weapon.range;
+      const col = isThird ? 0x00ffff : 0x38bdf8;
+
+      // 氷の粒子エフェクト
+      for (let i = 0; i < (isThird ? 8 : 4); i++) {
+        const pAng = s.ang + (Math.random() - 0.5) * 1.2;
+        const pDist = 20 + Math.random() * range;
+        const px = s.p.x + Math.cos(pAng) * pDist;
+        const py = s.p.y + Math.sin(pAng) * pDist;
+        const p = s.add.circle(px, py, isThird ? 4 : 2, 0xe0ffff, 0.9).setDepth(4);
+        s.tweens.add({
+          targets: p,
+          x: px + (Math.random() - 0.5) * 30,
+          y: py - 20,
+          alpha: 0,
+          scale: 0.1,
+          duration: 350,
+          onComplete: () => p.destroy()
+        });
+      }
+
+      // 3段目判定の確認ポップアップ（※テスト用）
+      if (isThird) {
+        s.floatText(s.p.x, s.p.y - 45, '3段目！', '#00ffff', '12px', 300);
+      }
+
+      // 攻撃判定を発動（3段目の時だけ addSouenOnHit: 10 を渡す）
+      s.strike(s.ang, Math.PI * (isThird ? 0.75 : 0.5), range, dmg, col, {
+        souenPerHit: isThird ? 10 : 0
+      });
+    },
+
+    // Eスキル：突進しながら最大8ヒット（1ヒットにつき蒼焔+3）
+    skill: (s, dmg) => {
+      const duration = 300, speed = 500, ang = s.ang;
+      s.inv = s.time.now + duration + 100;
+      let hitTicks = 0;
+
+      s.time.addEvent({
+        delay: 35,
+        repeat: 7, // 最大8ヒット
+        callback: () => {
+          hitTicks++;
+          const sec = 0.035;
+          const nx = s.p.x + Math.cos(ang) * speed * sec;
+          const ny = s.p.y + Math.sin(ang) * speed * sec;
+          if (free(nx, s.p.y, 11)) s.p.x = nx;
+          if (free(s.p.x, ny, 11)) s.p.y = ny;
+
+          // 残像と氷花エフェクト
+          const gh = s.add.circle(s.p.x, s.p.y, 14, 0x00ffff, 0.5).setDepth(2);
+          s.tweens.add({ targets: gh, alpha: 0, scale: 1.5, duration: 200, onComplete: () => gh.destroy() });
+
+          let hitAny = false;
+          s.enemies.forEach(e => {
+            if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - s.p.x, e.c.y - s.p.y) < e.r + 28) {
+              s.damage(e, Math.round(dmg * 0.4));
+              hitAny = true;
+            }
+          });
+
+          if (hitAny) {
+            s.souenGauge = Math.min(120, (s.souenGauge || 0) + 3);
+            s.floatText(s.p.x, s.p.y - 25, '蒼焔 +3', '#00ffff', '11px', 400);
+          }
+        }
+      });
+    }
   }
 };
 
@@ -616,9 +907,7 @@ const ARMOR_TYPES = {
   legs: { slot: '脚' },
   shoes: { slot: '靴' },
 };
-// 防具のキーのみを取得
-const SLOT_KEYS = Object.keys(ARMOR_TYPES); // ['helmet', 'chest', 'legs', 'shoes']
-
+const SLOT_KEYS = Object.keys(ARMOR_TYPES);
 // EQUIPPED には防具 + sub_weapon をそれぞれ初期化
 const EQUIPPED = {
   ...Object.fromEntries(SLOT_KEYS.map(s => [s, null])),
@@ -676,7 +965,7 @@ const ARMOR_BASE_STATS = {
   shoes:  { hp: 8,  red: 0.015 }
 };
 
-// const SLOT_KEYS = Object.keys(ARMOR_TYPES);
+
 const TIERS = [{ mult: 1 }, { mult: 1.7 }, { mult: 2.5 }, { mult: 3.5 }];
 const ARMOR_ROLL = [0.8, 1.2], RED_CAP = 0.6, DROP_RATE = 0.2, FLOORS_PER_TIER = 3;
 // const EQUIPPED = Object.fromEntries(SLOT_KEYS.map(s => [s, null]));
@@ -728,7 +1017,7 @@ const armorLabel = it => `${it.label}${plus(it)}(HP+${it.hp} 軽減${(it.red * 1
 
 const PACK_COLS = 5, PACK_ROWS = 4;
 // ★ sub_weapon を含めた新しい SLOT_ORDER
-const SLOT_ORDER = ['weapon', 'sub_weapon', ...SLOT_KEYS.filter(k => k !== 'sub_weapon'), 'artifact'];
+const SLOT_ORDER = ['helmet', 'chest', 'legs', 'shoes', 'weapon', 'sub_weapon', 'artifact', 'exs'];
 const BACKPACK = Array(PACK_COLS * PACK_ROWS).fill(null);
 const STORAGE = Array(PACK_COLS * PACK_ROWS).fill(null);
 BACKPACK[0] = rollWeapon('dual'); BACKPACK[1] = rollWeapon('bow'); BACKPACK[2] = rollWeapon('greatsword'); BACKPACK[3] = rollWeapon('spear');
@@ -1150,6 +1439,10 @@ class Main extends Phaser.Scene {
       { key: 'shop', tx: 9, ty: 9, label: 'お店' }, { key: 'inn', tx: 20, ty: 9, label: '宿屋' }, { key: 'storage', tx: 9, ty: 18, label: '倉庫' }
     ].map(s => ({ ...s, x: s.tx * T + T / 2, y: s.ty * T + T / 2 }));
     this.services.forEach(s => { this.add.rectangle(s.x, s.y, 20, 20, 0xc9a24a).setStrokeStyle(2, 0xffffff); this.add.text(s.x, s.y - 28, s.label, st).setOrigin(0.5); });
+    // Main.buildTown() 内に追加
+    this.gachaAlt = { x: 18 * T + T / 2, y: 14 * T + T / 2 };
+    this.add.rectangle(this.gachaAlt.x, this.gachaAlt.y, 20, 20, 0x00ffff).setStrokeStyle(2, 0xffffff);
+    this.add.text(this.gachaAlt.x, this.gachaAlt.y - 28, 'ガチャ台', st).setOrigin(0.5);
   }
 
   buildDungeon() {
@@ -1348,7 +1641,7 @@ class Main extends Phaser.Scene {
     this.keys = this.input.keyboard.addKeys({
       up: 'W', down: 'S', left: 'A', right: 'D',
       up2: 'UP', down2: 'DOWN', left2: 'LEFT', right2: 'RIGHT',
-      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', swap: 'X', bossWeapon1: 'SEVEN', bossWeapon2: 'EIGHT', bossWeapon3: 'NINE', bossWeapon4: 'ZERO', stock1: 'ONE', stock2: 'TWO', stock3: 'THREE', getSpellbook: 'SIX', warp60: 'FIVE'
+      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', swap: 'X', bossWeapon1: 'SEVEN', bossWeapon2: 'EIGHT', bossWeapon3: 'NINE', bossWeapon4: 'ZERO', stock1: 'ONE', stock2: 'TWO', stock3: 'THREE', getSpellbook: 'SIX', warp60: 'FIVE', exs: 'Z'
     });
     
     this.input.on('pointerdown', () => this.attack());
@@ -1443,20 +1736,21 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.atk)) this.attack();
     if (Phaser.Input.Keyboard.JustDown(k.skill)) this.skill();
     
-    /*if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
+    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon2)) this.obtainBossWeapon('eruption_wand');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon3)) this.obtainBossWeapon('dragon_chain');
-    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');*/
+    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');
     if (Phaser.Input.Keyboard.JustDown(k.swap)) this.swapWeapon();
     if (Phaser.Input.Keyboard.JustDown(k.stock1)) this.castSpellbookSkill(0);
     if (Phaser.Input.Keyboard.JustDown(k.stock2)) this.castSpellbookSkill(1);
     if (Phaser.Input.Keyboard.JustDown(k.stock3)) this.castSpellbookSkill(2);
-    //if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
-    /*if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
+    if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
+    if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
       SAVE.cleared = Math.max(SAVE.cleared, 60);
       saveGame();
       this.travel(60, maxHp(), 'デバッグ: 60Fへワープしました');
-    }*/
+    }
+    if (Phaser.Input.Keyboard.JustDown(k.exs)) this.castExS();//exs
 
     if (Phaser.Input.Keyboard.JustDown(k.subSkill)) this.subSkill();
     if (Phaser.Input.Keyboard.JustDown(k.potF)) this.usePotion('full');
@@ -1478,6 +1772,12 @@ class Main extends Phaser.Scene {
     if (nearSmith && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) { this.scene.pause(); this.scene.launch('blacksmith'); }
     const near = this.services.find(s => Math.hypot(p.x - s.x, p.y - s.y) < 28);
     if (near && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) { this.scene.pause(); this.scene.launch(near.key); }
+    // Main.update() 内に追加
+    const nearGacha = this.gachaAlt && Math.hypot(p.x - this.gachaAlt.x, p.y - this.gachaAlt.y) < 28;
+    if (nearGacha && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) {
+      this.scene.pause();
+      this.scene.launch('exs_gacha');
+    }
 
     // ★ 視界制限用グラフィックス（Depth 100 でプレイヤー上・UI背後に描画）
     if (!this.fogGfx) {
@@ -1740,6 +2040,22 @@ class Main extends Phaser.Scene {
   }
   // ★ Qスキル（3段階進化）の発動処理
   subSkill() {
+    if (weapon && weapon.type === 'mubi') {
+      if ((this.souenGauge || 0) < 80) {
+        return this.popup('蒼焔ゲージ不足 (80必要)', '#a0a7b8');
+      }
+      this.souenGauge -= 80;
+      const dmg = 3000 * 2.0; // 攻撃力3000の200%
+
+      for (let i = 0; i < 10; i++) {
+        this.time.delayedCall(i * 80, () => {
+          this.cameras.main.shake(60, 0.005);
+          this.strike(0, Math.PI, 140, dmg, 0x00ffff);
+          this.floatText(this.p.x, this.p.y - 40, '🔥 蒼焔乱舞！', '#00ffff', '16px', 600);
+        });
+      }
+      return;
+    }
     const n = this.time.now;
     this.nextSubSkill = this.nextSubSkill || 0;
     if (n < this.nextSubSkill || this.dodge || this.leaving) return;
@@ -1977,6 +2293,12 @@ class Main extends Phaser.Scene {
     }
   }
 
+  if (hitCountInThisStrike > 0 && opts.souenPerHit) {
+    const addAmount = hitCountInThisStrike * opts.souenPerHit;
+    this.souenGauge = Math.min(120, (this.souenGauge || 0) + addAmount);
+    this.floatText(p.x, p.y - 30, `蒼焔 +${addAmount}`, '#00ffff', '13px', 500);
+  }
+
   // ★ Qスキルのレベルアップ判定
   if (opts.isQSkill && hitCountInThisStrike > 0) {
     qSkillHitCount += hitCountInThisStrike;
@@ -2008,7 +2330,7 @@ class Main extends Phaser.Scene {
         this.floatText(e.c.x, e.c.y - 10, '耐性 -50%', '#88aaff', '12px', 400);
       }
       if (e.trait === 'counter_reflect' && !isRanged) {
-        const reflectDmg = Math.max(1, Math.round(dmg * 0.2));
+        const reflectDmg = Math.max(1, Math.round(dmg * 0.05));
         this.hurtPlayer(reflectDmg);
         this.floatText(this.p.x, this.p.y - 15, `反撃 ${reflectDmg}`, '#ff4444', '14px', 600);
       }
@@ -2124,6 +2446,7 @@ class Main extends Phaser.Scene {
 
     if (e.boss) this.onBossDefeated();
     else if (!e.isAllyMinion && !e.isCrystal && !e.isMinion && Math.random() < DROP_RATE) this.giveArmor(randomSlot());
+    exsGauge = Math.min(EXS_GAUGE_MAX, exsGauge + (e.boss ? 40 : 8));
       
   }
     
@@ -2224,7 +2547,16 @@ class Main extends Phaser.Scene {
   }
   swapWeapon() {
   if (this.leaving || this.dodge) return;
-  
+
+  // ★ メイン武器が「無尾」の場合は切り替え不可
+  if (weapon && weapon.type === 'mubi') {
+    return this.popup('「無尾」装備中は武器の切り替えができません', '#a0a7b8');
+    }
+
+    // サブ武器が未装備の場合、またはサブ武器が無尾の場合は切り替え不可
+  if (!EQUIPPED.sub_weapon || EQUIPPED.sub_weapon.type === 'mubi') {
+    return this.popup('サブ武器が装備されていません', '#a0a7b8');
+    }
   // サブ武器が未装備の場合は切り替え不可（またはメッセージ表示）
   if (!EQUIPPED.sub_weapon) {
     return this.popup('サブ武器が装備されていません', '#a0a7b8');
@@ -2321,6 +2653,60 @@ class Main extends Phaser.Scene {
       }
     });
   }
+  castExS() {
+  if (weapon && weapon.type === 'mubi') {
+      if ((this.souenGauge || 0) < 120) {
+        return this.popup('蒼焔ゲージ不足 (120必要)', '#a0a7b8');
+      }
+      this.souenGauge = 0; // 全消費
+      const atk = 3000;
+      const dmg = atk * 3.0; // 300%
+
+      this.cameras.main.shake(400, 0.02);
+      this.popup('❄️ 蒼焔・絶対凍結陣！', '#00ffff', 1);
+
+      // 8回ヒット＆凍結付与
+      for (let i = 0; i < 8; i++) {
+        this.time.delayedCall(i * 100, () => {
+          this.enemies.forEach(e => {
+            if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - this.p.x, e.c.y - this.p.y) < 180) {
+              this.damage(e, dmg);
+              // 3秒間凍結
+              e.stunUntil = this.time.now + 3000;
+              
+              // 3秒後（凍結解除時）に30%追撃ダメージ
+              if (!e.hasFreezePoison) {
+                e.hasFreezePoison = true;
+                this.time.delayedCall(3000, () => {
+                  if (e.hp > 0) {
+                    this.damage(e, Math.round(atk * 0.3));
+                    this.floatText(e.c.x, e.c.y - 20, `破砕 ${Math.round(atk * 0.3)}`, '#00ffff', '14px', 600);
+                  }
+                  e.hasFreezePoison = false;
+                });
+              }
+            }
+          });
+        });
+      }
+      return;
+    }
+  const n = this.time.now;
+  if (this.dodge || this.leaving) return;
+  if (exsGauge < EXS_GAUGE_MAX) {
+    return this.popup(`ExSゲージ不足 (${Math.floor(exsGauge)}/100)`, '#a0a7b8');
+  }
+
+  const exsDef = EXS_LIST[equippedExsId];
+  if (!exsDef) return;
+
+  exsGauge = 0; // ゲージ消費
+  const lv = ownedExs[equippedExsId] || 1;
+  const baseDmg = atkTotal(this) * (1 + (lv - 1) * 0.15); // レベルごとの威力補正
+
+  exsDef.cast(this, this.p, baseDmg);
+  saveGame();
+}
   
 }
 
@@ -2335,6 +2721,13 @@ class HudScene extends Phaser.Scene {
       fontFamily: 'system-ui, sans-serif', 
       fontSize: '11px', 
       color: '#ffffff', 
+      fontWeight: 'bold' 
+    }).setDepth(11);
+    
+    this.souenText = this.add.text(125, 50, '', { 
+      fontFamily: 'system-ui, sans-serif', 
+      fontSize: '10px', 
+      color: '#00ffff', 
       fontWeight: 'bold' 
     }).setDepth(11);
 
@@ -2407,6 +2800,13 @@ class HudScene extends Phaser.Scene {
     this.skillCdText = this.add.text(w - 55, h - 30, '', { ...fontSt, fontSize: '11px' }).setOrigin(0.5).setDepth(12);
 
     if (this.pending) this.setLines(this.pending);
+    this.exsText = this.add.text(w - 295, h - 78, 'Z', { 
+      fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#00ffff', fontWeight: 'bold' 
+    }).setOrigin(0.5).setDepth(12);
+
+    this.exsCdText = this.add.text(w - 295, h - 30, '', { 
+      fontFamily: 'system-ui, sans-serif', fontSize: '11px', fontWeight: 'bold' 
+    }).setOrigin(0.5).setDepth(12);
   }
 
   setLines(lines) {
@@ -2419,6 +2819,9 @@ class HudScene extends Phaser.Scene {
 
     const now = this.time.now;
     const w = this.scale.width, h = this.scale.height;
+
+    const currentWeapon = (typeof weapon !== 'undefined') ? weapon : null;
+    const isMubiEquipped = currentWeapon && currentWeapon.type === 'mubi';
 
     // ==========================================
     // 1. 左上：ステータス＆HP/EXPパネル (ステータスボーナス表示追加！)
@@ -2465,6 +2868,28 @@ class HudScene extends Phaser.Scene {
 
     this.hpText.setPosition(hpBarX + 45, 18);
     this.hpText.setText(`HP ${curHp} / ${maxHpVal}`);
+
+    // ★ 蒼焔ゲージの描画（無尾装備時のみ）
+    if (isMubiEquipped) {
+      const souenVal = Math.min(120, Math.max(0, main.souenGauge || 0));
+      const souenRatio = souenVal / 120;
+
+      this.uiGfx.fillStyle(0x002233, 1);
+      this.uiGfx.fillRect(hpBarX, 48, hpBarWidth, 10);
+      this.uiGfx.fillStyle(0x00ffff, 1);
+      this.uiGfx.fillRect(hpBarX, 48, hpBarWidth * souenRatio, 10);
+      this.uiGfx.lineStyle(1, 0x00ffff, 0.7);
+      this.uiGfx.strokeRect(hpBarX, 48, hpBarWidth, 10);
+
+      this.souenText.setVisible(true);
+      this.souenText.setPosition(hpBarX + 55, 47);
+      this.souenText.setText(`蒼焔 ${Math.floor(souenVal)} / 120`);
+
+      this.statBonusText.setPosition(72, 66);
+    } else {
+      this.souenText.setVisible(false);
+      this.statBonusText.setPosition(72, 52);
+    }
 
     // ★ ステータスボーナス（振り分けポイント）の描画
     const hpBonus = PLAYER.hpPts * HP_PER_PT;
@@ -2602,6 +3027,14 @@ class HudScene extends Phaser.Scene {
 // e
     const skillCdLeft = Math.max(0, main.nextSkill - now);
     this.drawCoolDownSlot(w - 55, cy, radius, skillCdLeft, weapon.skill.cd, 0xd97706, this.skillCdText);
+    const exsRadius = 28;
+    const isExsReady = exsGauge >= EXS_GAUGE_MAX;
+    this.drawCoolDownSlot(w - 295, h - 50, exsRadius, isExsReady ? 0 : (EXS_GAUGE_MAX - exsGauge),  EXS_GAUGE_MAX, 0x00ffff, this.exsCdText);
+    if (isExsReady) {
+      this.exsCdText.setText('EXS!!').setColor('#00ffff');
+    } else {
+      this.exsCdText.setText(`${Math.floor(exsGauge)}%`).setColor('#a0a7b8');
+    }
   }
 
   drawCoolDownSlot(cx, cy, radius, cdLeft, maxCd, bgCol, cdTextObj) {
@@ -2754,6 +3187,7 @@ const itemColor = it => {
   if (!it) return 0x1d2230; // 空の場合は背景色を返す
   if (it.slot === 'potion') return it.kind === 'full' ? 0xe53e3e : 0x38a169;
   if (it.slot === 'weapon') {
+    if (it.isLegend || it.type === 'mubi') return 0x00ffff;
     return it.isBossItem ? 0xd98cff : 0xc9a24a;
   }
   return isArtifact(it) ? 0xb15cff : (TIER_COLORS[it.tier] || 0x8a6a4a);
@@ -2778,18 +3212,38 @@ const itemInfo = it => {
 const slotItem = l => l.kind === 'pack' ? BACKPACK[l.key] : getEq(l.key);
 const slotLayout = () => [
   ...BACKPACK.map((_, i) => ({ kind: 'pack', key: i, x: 92 + (i % PACK_COLS) * 70, y: 140 + Math.floor(i / PACK_COLS) * 70 })),
-  ...SLOT_ORDER.map((s, i) => ({ kind: 'eq', key: s, x: 520, y: 110 + i * 70 }))
+  { kind: 'eq', key: 'helmet', x: 520, y: 140 },
+  { kind: 'eq', key: 'chest',  x: 520, y: 210 },
+  { kind: 'eq', key: 'legs',   x: 520, y: 280 },
+  { kind: 'eq', key: 'shoes',  x: 520, y: 350 },
+  // 2列目 (右列): 武器 / 副武 / 遺物 / 大技
+  { kind: 'eq', key: 'weapon',     x: 640, y: 140 },
+  { kind: 'eq', key: 'sub_weapon', x: 640, y: 210 },
+  { kind: 'eq', key: 'artifact',   x: 640, y: 280 },
+  { kind: 'eq', key: 'exs',        x: 640, y: 350 }
 ];
 const drawSlots = (scene, slots, st) => {
   const gr = scene.add.graphics().lineStyle(2, 0x596072, 1).fillStyle(0x1d2230, 1);
-  slots.forEach(s => gr.fillRect(s.x - 32, s.y - 32, 64, 64).strokeRect(s.x - 32, s.y - 32, 64, 64));
-  SLOT_ORDER.forEach((s, i) => {
-    // ★ sub_weapon の場合に '副武' と表示する分岐を追加
-    const label = s === 'weapon' ? '武器' : s === 'sub_weapon' ? '副武' : s === 'artifact' ? '遺物' : (ARMOR_TYPES[s] ? ARMOR_TYPES[s].slot : '');
-    scene.add.text(562, 110 + i * 70, label, st).setOrigin(0, 0.5);
+  slots.forEach(s => {
+    if (s.kind === 'eq' && s.key === 'exs') {
+      // 大技スロット専用の水色枠背景
+      gr.lineStyle(2, 0x00ffff, 1).fillStyle(0x003344, 1);
+    } else {
+      gr.lineStyle(2, 0x596072, 1).fillStyle(0x1d2230, 1);
+    }
+    gr.fillRect(s.x - 32, s.y - 32, 64, 64).strokeRect(s.x - 32, s.y - 32, 64, 64);
   });
+
+  const labels = [
+    { text: '兜', x: 520, y: 105 }, { text: '胸', x: 520, y: 175 },
+    { text: '脚', x: 520, y: 245 }, { text: '靴', x: 520, y: 315 },
+    { text: '武器', x: 640, y: 105 }, { text: '副武', x: 640, y: 175 },
+    { text: '遺物', x: 640, y: 245 }, { text: '大技', x: 640, y: 315 }
+  ];
+  labels.forEach(l => scene.add.text(l.x, l.y, l.text, { ...st, fontSize: '12px', color: '#a0a7b8' }).setOrigin(0.5));
 };
 // 【修正後】makeIcon 関数
+// アイコン描画関数 (ExS表示対応)
 const makeIcon = (scene, it, x, y) => {
   if (!it) {
     return scene.add.container(x, y, [
@@ -2797,14 +3251,24 @@ const makeIcon = (scene, it, x, y) => {
     ]);
   }
 
-  // ★ dur や durMax が未定義の場合でも safe に 1 を入れる
+  // ExS（大技）用アイコン描画
+  if (it.isExs) {
+    const exs = EXS_LIST[it.id];
+    const lv = ownedExs[it.id] || 1;
+    const f = { fontFamily: 'system-ui, sans-serif', color: '#ffffff' };
+    return scene.add.container(x, y, [
+      scene.add.rectangle(0, 0, 56, 56, 0x00ffff),
+      scene.add.text(0, -8, '技', { ...f, fontSize: '24px', color: '#001122', fontWeight: 'bold' }).setOrigin(0.5),
+      scene.add.text(0, 12, `Lv.${lv}`, { ...f, fontSize: '11px', color: '#002233', fontWeight: 'bold' }).setOrigin(0.5)
+    ]);
+  }
+
   const durMax = (it.durMax && it.durMax > 0) ? it.durMax : 1;
   const dur = (it.dur != null) ? it.dur : durMax;
   const r = Math.min(1, Math.max(0, dur / durMax));
   const col = r > 0.5 ? 0x7cf0a0 : r > 0.2 ? 0xffd36a : 0xe5534b;
   const f = { fontFamily: 'system-ui, sans-serif', color: '#ffffff' };
 
-  // ポーションの場合は個数(x個)、それ以外は耐久値を表示
   const isPot = it.slot === 'potion';
   const subText = isPot ? `x${it.stack || 1}` : (isArtifact(it) ? '' : String(dur));
 
@@ -2812,7 +3276,6 @@ const makeIcon = (scene, it, x, y) => {
     scene.add.rectangle(0, 0, 56, 56, itemColor(it)),
     scene.add.text(0, -8, itemChar(it), { ...f, fontSize: '24px' }).setOrigin(0.5),
     scene.add.text(0, 10, subText, { ...f, fontSize: '11px', color: isPot ? '#ffd36a' : '#ffffff' }).setOrigin(0.5),
-    // 装備品の場合のみ耐久値ゲージを描画
     ...(!isPot && !isArtifact(it) ? [
       scene.add.rectangle(-26, 23, 52, 5, 0x000000, 0.6).setOrigin(0, 0.5),
       scene.add.rectangle(-26, 23, 52 * r, 5, col).setOrigin(0, 0.5)
@@ -2832,7 +3295,7 @@ class BackpackScene extends MenuScene {
     this.head = this.add.text(60, 40, '', st);
     this.infoText = this.add.text(60, 398, '', { ...st, wordWrap: { width: 400 } });
     this.noteText = this.add.text(60, 478, '', { ...st, color: '#ff9a8a' });
-    this.add.text(w / 2, 515, 'ドラッグで装備・外す・入れ替え(武器はバッグ内の武器と交換)/ Esc か I で閉じる', { ...st, color: '#a0a7b8' }).setOrigin(0.5);
+    this.add.text(w / 2, 515, 'ドラッグで装備操作 / 大技枠クリックでセットExSを切り替え / Esc・I で閉じる', { ...st, color: '#a0a7b8' }).setOrigin(0.5);
     this.items = [];
     this.input.on('drag', (p, o, x, y) => o.setPosition(x, y));
     this.input.on('dragend', (p, o) => this.time.delayedCall(0, () => this.drop(o)));
@@ -2843,23 +3306,81 @@ class BackpackScene extends MenuScene {
 
   update() { if (this.time.now - this.t0 > 250 && Phaser.Input.Keyboard.JustDown(this.keyI)) this.close(); }
 
-  get(l) { return slotItem(l); }
-  set(l, it) { if (l.kind === 'pack') BACKPACK[l.key] = it; else setEq(l.key, it); }
+  get(l) {
+    if (l.kind === 'eq' && l.key === 'exs') {
+      return equippedExsId ? { isExs: true, id: equippedExsId } : null;
+    }
+    return slotItem(l);
+  }
+
+  set(l, it) {
+    if (l.kind === 'eq' && l.key === 'exs') {
+      if (it && it.isExs) equippedExsId = it.id;
+      return;
+    }
+    if (l.kind === 'pack') BACKPACK[l.key] = it;
+    else setEq(l.key, it);
+  }
 
   render() {
     this.items.forEach(o => o.destroy()); this.items = [];
     const a = armorStats();
-    this.head.setText(`バッグ    防具:最大HP+${a.hp}  ダメージ軽減${(a.red * 100).toFixed(1)}%`);
+    this.head.setText(`バッグ    防具:最大HP+${a.hp}  軽減${(a.red * 100).toFixed(1)}%`);
     this.infoText.setText(''); 
+    
     this.slots.forEach(s => {
-      const it = this.get(s); if (!it) return;
+      const it = this.get(s);
+      
+      // 空の大技スロット用表示
+      if (!it && s.kind === 'eq' && s.key === 'exs') {
+        const emptyExs = this.add.container(s.x, s.y, [
+          this.add.rectangle(0, 0, 56, 56, 0x002233),
+          this.add.text(0, 0, '未セット', { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#00ffff' }).setOrigin(0.5)
+        ]).setInteractive(new Phaser.Geom.Rectangle(-28, -28, 56, 56), Phaser.Geom.Rectangle.Contains);
+        
+        emptyExs.on('pointerdown', () => this.cycleExs());
+        this.items.push(emptyExs);
+        return;
+      }
+
+      if (!it) return;
+      
       const c = makeIcon(this, it, s.x, s.y).setSize(56, 56).setData('loc', s);
-      c.setInteractive(); this.input.setDraggable(c);
-      c.on('pointerover', () => this.infoText.setText([itemInfo(it), durLabel(it)]));
+      c.setInteractive();
+      
+      if (s.kind === 'eq' && s.key === 'exs') {
+        c.on('pointerdown', () => this.cycleExs());
+        c.on('pointerover', () => {
+          const exsDef = EXS_LIST[it.id];
+          const lv = ownedExs[it.id] || 1;
+          this.infoText.setText([`✦ [${exsDef.rarity}] ${exsDef.name} (Lv.${lv})`, exsDef.desc, '※クリックで所持ExSを切り替え']);
+        });
+      } else {
+        this.input.setDraggable(c);
+        c.on('pointerover', () => this.infoText.setText([itemInfo(it), durLabel(it)]));
+        c.on('dragstart', () => c.setDepth(10));
+      }
+      
       c.on('pointerout', () => this.infoText.setText(''));
-      c.on('dragstart', () => c.setDepth(10));
       this.items.push(c);
     });
+  }
+
+  // 大技スロットクリック時の所持ExS切り替え
+  // 大技スロットクリック時の所持ExS切り替え
+  cycleExs() {
+    // ★ メイン武器が「無尾」の場合は大技の切り替え（装備）を禁止
+    if (weapon && weapon.type === 'mubi') {
+      return this.noteText.setText('「無尾」を装備中は大技（ExS）をセットできません');
+    }
+
+    const ownedKeys = Object.keys(ownedExs);
+    if (ownedKeys.length === 0) return;
+    const currentIndex = ownedKeys.indexOf(equippedExsId);
+    const nextIndex = (currentIndex + 1) % ownedKeys.length;
+    equippedExsId = ownedKeys[nextIndex];
+    saveGame();
+    this.render();
   }
 
   drop(o) {
@@ -2869,31 +3390,61 @@ class BackpackScene extends MenuScene {
   }
 
   move(src, dst) {
-  const a = this.get(src), b = this.get(dst);
-  
-  // 装備スロットにセットできるアイテムかどうかの判定
-  const fits = (l, it) => {
-    if (!it || l.kind === 'pack') return true;
-    if (l.key === 'weapon' || l.key === 'sub_weapon') {
-      return it.slot === 'weapon'; // 武器属性ならメイン・サブどちらにも装備可能
+    // ★ 大技（exs）枠への操作を完全ガード
+    if ((src.kind === 'eq' && src.key === 'exs') || (dst.kind === 'eq' && dst.key === 'exs')) {
+      return this.noteText.setText('大技枠はドラッグ操作できません（クリックで切り替え）');
     }
-    return it.slot === l.key;
-  };
 
-  if (!fits(dst, a) || !fits(src, b)) return this.noteText.setText('その部位には装備できません');
-  
-  // メイン武器を空にするのを防止
-  if (src.kind === 'eq' && src.key === 'weapon' && !b) {
-    return this.noteText.setText('メイン武器は外せません。別の武器と入れ替えてください');
-  }
+    const a = this.get(src), b = this.get(dst);
 
-  // 枠にセットされたアイテムの slot 情報を更新して代入
-  this.set(src, b); 
-  this.set(dst, a);
-  
-  const m = this.scene.get('main'); 
-  m.hp = Math.min(m.hp, maxHp());
-  this.noteText.setText('');
+    // ★ 現在メイン武器に「無尾」が装備されているかチェック
+    const isMubiEquipped = weapon && weapon.type === 'mubi';
+
+    // 1. 「無尾」自体を副武器枠へセットするのを禁止
+    if ((a && a.type === 'mubi' && dst.kind === 'eq' && dst.key === 'sub_weapon') ||
+        (b && b.type === 'mubi' && src.kind === 'eq' && src.key === 'sub_weapon')) {
+      return this.noteText.setText('「無尾」は副武器にセットできません');
+    }
+
+    // 2. メイン武器が「無尾」のときに副武器枠へアイテムを移動・セットするのを禁止（追加）
+    if (isMubiEquipped && (dst.key === 'sub_weapon' || src.key === 'sub_weapon')) {
+      return this.noteText.setText('「無尾」を装備中は副武器を装備できません');
+    }
+
+    const fits = (l, it) => {
+      if (!it || l.kind === 'pack') return true;
+      if (l.key === 'weapon' || l.key === 'sub_weapon') return it.slot === 'weapon';
+      return it.slot === l.key;
+    };
+
+    if (!fits(dst, a) || !fits(src, b)) return this.noteText.setText('その部位には装備できません');
+    if (src.kind === 'eq' && src.key === 'weapon' && !b) return this.noteText.setText('メイン武器は外せません。別の武器と入れ替えてください');
+
+    this.set(src, b); 
+    this.set(dst, a);
+
+    // 「無尾」をメイン武器にセットした瞬間、既存の副武器とExSを自動解除する処理
+    if (weapon && weapon.type === 'mubi') {
+      if (EQUIPPED.sub_weapon) {
+        addToPack(EQUIPPED.sub_weapon);
+        EQUIPPED.sub_weapon = null;
+      }
+      equippedExsId = null;
+      this.noteText.setText('「無尾」を装備したため、副武器とExSが解除されました');
+    }
+    // ★ 追記不足分：「無尾」が副武器枠へ移動・入れ替わってしまった場合は副武器から外してバッグへ戻す
+    else if (EQUIPPED.sub_weapon && EQUIPPED.sub_weapon.type === 'mubi') {
+      const mubiInSub = EQUIPPED.sub_weapon;
+      EQUIPPED.sub_weapon = null;
+      addToPack(mubiInSub);
+      this.noteText.setText('「無尾」は副武器に装備できないため、バッグに戻されました');
+      this.noteText.setText('');
+    }
+    
+    const m = this.scene.get('main'); 
+    m.hp = Math.min(m.hp, maxHp());
+    saveGame();
+    this.render();
   }
 }
 class BlacksmithScene extends MenuScene {
@@ -3287,10 +3838,118 @@ class PatchNotesScene extends MenuScene {
     this.input.keyboard.addKey('SPACE').on('down', () => this.close());
   }
 }
+class ExsGachaScene extends MenuScene {
+  constructor() { super('exs_gacha'); }
+
+  create() {
+    const w = this.scale.width, h = this.scale.height;
+    const st = { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#e8eaf0' };
+    
+    // 背景オーバーレイ
+    this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.82);
+    
+    // タイトル
+    this.add.text(w / 2, 45, '✦ 秘術錬成（ExSガチャ） ✦', { 
+      fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#00ffff', fontWeight: 'bold' 
+    }).setOrigin(0.5);
+
+    this.headText = this.add.text(w / 2, 85, '', { ...st, color: '#ffd36a' }).setOrigin(0.5);
+    this.infoText = this.add.text(w / 2, 160, '1回 1000G でExS（大技）を獲得・レベルアップ！', st).setOrigin(0.5);
+    
+    // ガチャ結果表示テキスト
+    this.resultText = this.add.text(w / 2, 230, '', { 
+      fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#7cf0a0', fontWeight: 'bold' 
+    }).setOrigin(0.5);
+    
+    this.descText = this.add.text(w / 2, 280, '', { 
+      fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#a0a7b8', wordWrap: { width: 500 } 
+    }).setOrigin(0.5);
+
+    this.noteText = this.add.text(w / 2, 330, '', { ...st, color: '#ff9a8a' }).setOrigin(0.5);
+
+    this.items = [];
+    this.input.keyboard.addKey('ESC').on('down', () => this.close());
+    this.render();
+  }
+
+  render() {
+    this.items.forEach(o => o.destroy()); 
+    this.items = [];
+    const w = this.scale.width;
+    
+    this.headText.setText(`所持金: ${PLAYER.gold} G  |  現在セット中: ${EXS_LIST[equippedExsId] ? EXS_LIST[equippedExsId].name : 'なし'}`);
+
+    // ボタン描画
+    this.btn(w / 2 - 110, 390, '1回引く (5000G)', () => this.drawGacha(), PLAYER.gold >= 1000);
+    this.btn(w / 2 + 110, 390, '閉じる (ESC)', () => this.close());
+  }
+
+  drawGacha() {
+    const cost = 5000;
+    if (!spendGold(cost)) {
+      this.noteText.setText('ゴールドが足りません！');
+      this.render();
+      return;
+    }
+
+    this.noteText.setText('');
+    
+    // ★ 1. 伝説「武器」としての無尾の抽選 (0.5%)
+    if (Math.random() < 0.01) {
+      const success = getMubi();
+
+      if (success) {
+        this.resultText.setText('✦✦✦ 超激レア排出！ [Legend] 無尾 ✦✦✦').setColor('#00ffff');
+        this.descText.setText('【メイン武器】バッグに「無尾」を獲得しました！（Iキーで確認）');
+        this.noteText.setText('');
+      } else {
+        PLAYER.gold += cost; // 返金
+        this.resultText.setText('✦ [Legend] 無尾 が当選しました！').setColor('#ff4444');
+        this.descText.setText('ですがバッグが満杯のため入手できませんでした（5000Gは返金されました）。');
+        this.noteText.setText('バッグに空きを作ってから再度お試しください。');
+      }
+
+      this.render();
+      return; // ★ 武器として当たったので確定終了
+    }
+
+    // ==========================================
+    // 2. 通常の ExS（大技）ガチャ処理
+    // ★ 'mubi' に加えて 'frost_iaijutsu' (霜月・零式) も完全に除外！
+    // ==========================================
+    const ssrRate = 0.03; 
+
+    // 'frost_iaijutsu' を除外対象に追加
+    const ssrKeys = Object.keys(EXS_LIST).filter(k => k !== 'mubi' && k !== 'frost_iaijutsu' && EXS_LIST[k].rarity === 'SSR');
+    const srKeys  = Object.keys(EXS_LIST).filter(k => k !== 'mubi' && k !== 'frost_iaijutsu' && EXS_LIST[k].rarity === 'SR');
+
+    let rolledKey = '';
+    if (Math.random() < ssrRate && ssrKeys.length > 0) {
+      rolledKey = ssrKeys[Math.floor(Math.random() * ssrKeys.length)];
+    } else if (srKeys.length > 0) {
+      rolledKey = srKeys[Math.floor(Math.random() * srKeys.length)];
+    }
+
+    if (!rolledKey) return;
+
+    const item = EXS_LIST[rolledKey];
+    ownedExs[rolledKey] = (ownedExs[rolledKey] || 0) + 1;
+    const currentLv = ownedExs[rolledKey];
+
+    equippedExsId = rolledKey; // 大技をセット
+
+    const rarityColor = item.rarity === 'SSR' ? '#00ffff' : '#ffd36a';
+    this.resultText.setText(`✦ 排出: [${item.rarity}] ${item.name} (Lv.${currentLv})`).setColor(rarityColor);
+    this.descText.setText(item.desc);
+
+    saveGame();
+    this.render();
+  }
+}
 new Phaser.Game({
   type: Phaser.AUTO, parent: 'game', width: 800, height: 540, backgroundColor: '#0b0d12',
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_HORIZONTALLY },
-  scene: [Main, HudScene, PauseScene, StatScene, BackpackScene, BlacksmithScene, ShopScene, InnScene, StorageScene, GrimoireScene, PatchNotesScene]
+  scene: [Main, HudScene, PauseScene, StatScene, BackpackScene, BlacksmithScene, ShopScene, InnScene, StorageScene, GrimoireScene, PatchNotesScene, ExsGachaScene]
 });
 </script>
 </body>
