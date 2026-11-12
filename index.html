@@ -1641,7 +1641,7 @@ class Main extends Phaser.Scene {
     this.keys = this.input.keyboard.addKeys({
       up: 'W', down: 'S', left: 'A', right: 'D',
       up2: 'UP', down2: 'DOWN', left2: 'LEFT', right2: 'RIGHT',
-      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', swap: 'X', /*bossWeapon1: 'SEVEN', bossWeapon2: 'EIGHT', bossWeapon3: 'NINE',*/ bossWeapon4: 'ZERO', stock1: 'ONE', stock2: 'TWO', stock3: 'THREE', /*getSpellbook: 'SIX', warp60: 'FIVE',*/ exs: 'Z'
+      atk: 'SPACE', skill: 'E', bag: 'I', dodge: 'SHIFT', use: 'F', pause: 'TAB', subSkill: 'Q', potF: 'R', swap: 'X', bossWeapon1: 'SEVEN', bossWeapon2: 'EIGHT', bossWeapon3: 'NINE', bossWeapon4: 'ZERO', stock1: 'ONE', stock2: 'TWO', stock3: 'THREE', getSpellbook: 'SIX', warp60: 'FIVE', exs: 'Z'
     });
     
     this.input.on('pointerdown', () => this.attack());
@@ -1736,20 +1736,20 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.atk)) this.attack();
     if (Phaser.Input.Keyboard.JustDown(k.skill)) this.skill();
     
-    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
+    /*if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon2)) this.obtainBossWeapon('eruption_wand');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon3)) this.obtainBossWeapon('dragon_chain');
-    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');
+    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');*/
     if (Phaser.Input.Keyboard.JustDown(k.swap)) this.swapWeapon();
     if (Phaser.Input.Keyboard.JustDown(k.stock1)) this.castSpellbookSkill(0);
     if (Phaser.Input.Keyboard.JustDown(k.stock2)) this.castSpellbookSkill(1);
     if (Phaser.Input.Keyboard.JustDown(k.stock3)) this.castSpellbookSkill(2);
-    if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
-    if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
+    //if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
+    /*if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
       SAVE.cleared = Math.max(SAVE.cleared, 60);
       saveGame();
       this.travel(60, maxHp(), 'デバッグ: 60Fへワープしました');
-    }
+    }*/
     if (Phaser.Input.Keyboard.JustDown(k.exs)) this.castExS();//exs
 
     if (Phaser.Input.Keyboard.JustDown(k.subSkill)) this.subSkill();
