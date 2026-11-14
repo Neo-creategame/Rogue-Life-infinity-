@@ -3401,6 +3401,7 @@ const itemColor = it => {
   if (!it) return 0x1d2230; // 空の場合は背景色を返す
   if (it.slot === 'potion') return it.kind === 'full' ? 0xe53e3e : 0x38a169;
   if (it.slot === 'weapon') {
+    if (it.type === 'apocalypse') return 0xff1144;
     if (it.isLegend || it.type === 'mubi') return 0x00ffff;
     return it.isBossItem ? 0xd98cff : 0xc9a24a;
   }
