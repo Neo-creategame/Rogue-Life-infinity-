@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="ja">
 <head>
@@ -25,6 +26,7 @@ h1{font-size:1.15rem;margin:0 0 12px}
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/4.2.0/phaser.min.js"></script>
 <script>
+//コードを生成するときは書き換えたり追加する部分のコードだけを生成してください。
 // ---- マップ生成(シード値から毎回同じ形になる) ----
 const T = 32, W = 40, H = 30, SEED_BASE = 1000;
 
@@ -78,7 +80,7 @@ const TOWN_SHOPS = [['お店', 6, 5], ['宿屋', 17, 5], ['鍛冶屋', 28, 5], [
 // ---- セーブ＆ロード機能 ----
 const SAVE_KEY = 'alone_rpg_save_data_v1';
 // バージョン管理と更新履歴
-const GAME_VERSION = '2.0.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
+const GAME_VERSION = '2.1.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
 const VERSION_KEY = 'alone_rpg_seen_version';
 /*'✦ Ver 1..0 アップデート情報 ✦',
   '',
@@ -86,11 +88,16 @@ const VERSION_KEY = 'alone_rpg_seen_version';
   '・',
   '',*/
 const PATCH_NOTES = [
+  '✦ Ver 2.1.0 アップデート情報 ✦',
+  '',
+  '【新要素】',
+  '・ガチャに新たなLegend武器アポカリプス登場',
+  '',
   '✦ Ver 2.0.0 アップデート情報 ✦',
   '',
   '【新要素】',
   '・ガチャの追加1回5000ゴールドで目玉はLegendの無尾！！確率アップ中!!',
-  '・新たなスキルEXS（Extra Skill 大技）が登場！！敵を倒すとゲージが溜まっていき、ExSが溜まったらZで発動しよう！！',
+  '・新たなスキルEXS（Extra Skill 大技）が登場！！敵を倒すとゲージが溜まっていく！ExSが溜まったらZで発動しよう！！',
   '',
   '✦ Ver 1.8.0 アップデート情報 ✦',
   '',
@@ -174,7 +181,8 @@ function saveGame() {
 }
 // 「無尾」をバッグに追加してセーブする共通関数
 function getMubi() {
-  const mubiItem = rollWeapon('mubi');
+  const targetFloor = Math.max(1, SAVE.cleared || 1);
+  const mubiItem = rollWeapon('mubi', targetFloor);
   const added = addToPack(mubiItem);
   
   if (added) {
@@ -187,6 +195,19 @@ function getMubi() {
   return added; // 成功なら true, バッグ満杯なら false を返す
 }
 
+function getApocalypse() {
+  const targetFloor = Math.max(1, SAVE.cleared || 1);
+  const apoItem = rollWeapon('apocalypse', targetFloor);
+  const added = addToPack(apoItem);
+
+  if (added) {
+    saveGame();
+    console.log(`✦ [Legend] アポカリプス (攻撃力:${apoItem.atk}) を獲得しました！`);
+  } else {
+    console.warn('バッグが満杯のため「アポカリプス」を入手できませんでした。');
+  }
+  return added;
+}
 // データを読み込む
 function loadGame() {
   try {
@@ -210,7 +231,21 @@ function loadGame() {
     if (data.exsGauge != null) exsGauge = data.exsGauge;
     if (data.equippedExsId) equippedExsId = data.equippedExsId;
     if (data.ownedExs) Object.assign(ownedExs, data.ownedExs);
-    if (weapon && weapon.type === 'mubi') {
+    const targetFloor = Math.max(1, SAVE.cleared || 1);
+    const allItems = [weapon, ...BACKPACK, ...STORAGE, ...Object.values(EQUIPPED)];
+    allItems.forEach(it => {
+      if (it && (it.type === 'mubi'|| it.type === 'apocalypse')) {
+        const baseVal = it.type === 'apocalypse' ? 750 : 500;
+        const baseScaled = Math.round(baseVal * weaponFloorMult(targetFloor));
+        // すでに鍛冶屋で強化(+lv)していた分も維持して計算
+        const lvMult = Math.pow(1 + SMITH.upStep, it.lv || 0);
+        const newAtk = Math.round(baseScaled * lvMult);
+        if (it.atk < newAtk) {
+          it.atk = newAtk;
+        }
+      }
+    });
+    if (weapon && (weapon.type === 'mubi'|| weapon.type === 'apocalypse')) {
       if (EQUIPPED.sub_weapon) {
         addToPack(EQUIPPED.sub_weapon);
         EQUIPPED.sub_weapon = null;
@@ -269,13 +304,23 @@ const WEAPONS = {
   spellbook: { name: 'スペルブック', base: 30, cd: 300, range: 24, speedMult: 1.0, skill: { name: '魔術ストック', cd: 1000 }},
   mubi: {
     name: '無尾',
-    baseAtk: 3000,
+    baseAtk: 5000,
     base: 3000,
     cd: 350,
     range: 85,
     speedMult: 1.1,
     isLegend: true,
     skill: { name: '蒼焔連突', cd: 4000 }
+  },
+  apocalypse: {
+    name: 'アポカリプス',
+    baseAtk: 750,
+    base: 750,
+    cd: 380,
+    range: 115,
+    speedMult: 1.15,
+    isLegend: true,
+    skill: { name: 'メテオ・フォール', cd: 4500 }
   },
 
 };
@@ -492,10 +537,13 @@ const rollWeapon = (type, floor = 1) => {
   let atk = Math.round(baseDef.base * weaponFloorMult(floor));
   let cd = baseDef.cd;
   if (baseDef.isLegend) {
+    const targetFloor = Math.max(floor, SAVE.cleared || 1);
+    const baseVal = type === 'apocalypse' ? 750 : 500;
+    const scaledAtk = Math.round(baseVal * weaponFloorMult(targetFloor));
     return {
-      type: 'mubi',
+      type: type,
       name: baseDef.name,
-      baseAtk: baseDef.base,
+      baseAtk: baseVal,
       cd: baseDef.cd,
       range: baseDef.range,
       speedMult: baseDef.speedMult,
@@ -505,7 +553,7 @@ const rollWeapon = (type, floor = 1) => {
       dur: 999,
       durMax: 999,
       lv: 0,
-      atk: 3000, // 固定攻撃力
+      atk: scaledAtk, // 固定攻撃力
       isLegend: true,
       rarity: 'Legend'
     };
@@ -797,6 +845,82 @@ const BEHAVIORS = {
           }
         }
       });
+    }
+  },
+  apocalypse: {
+    // 通常攻撃：深紅の終末斬撃＋貫通衝撃波（ヒットで終末ゲージ+12）
+    attack: (s, dmg) => {
+      s.cameras.main.shake(70, 0.004);
+      // 斬撃波の弾も同時に飛ばす（遠距離のボスにも届く）
+      s.shoot(s.ang, Math.round(dmg * 0.6), 0xff2255);
+
+      // 漆黒と紅蓮の粒子エフェクト
+      for (let i = 0; i < 6; i++) {
+        const pAng = s.ang + (Math.random() - 0.5) * 1.4;
+        const pDist = 25 + Math.random() * weapon.range;
+        const px = s.p.x + Math.cos(pAng) * pDist;
+        const py = s.p.y + Math.sin(pAng) * pDist;
+        const col = i % 2 === 0 ? 0xff1144 : 0x4c1d95;
+        const pt = s.add.circle(px, py, 4, col, 0.9).setDepth(4);
+        s.tweens.add({
+          targets: pt,
+          x: px + Math.cos(s.ang) * 25,
+          y: py + Math.sin(s.ang) * 25,
+          alpha: 0,
+          scale: 0.2,
+          duration: 300,
+          onComplete: () => pt.destroy()
+        });
+      }
+
+      s.strike(s.ang, Math.PI * 0.7, weapon.range, dmg, 0xff1144, {
+        apoPerHit: 12
+      });
+    },
+
+    // Eスキル：メテオ・フォール（カーソル周辺に5発の巨大隕石落下・1ヒットで終末ゲージ+8）
+    skill: (s, dmg) => {
+      const cam = s.cameras.main, ptr = s.input.activePointer;
+      const wp = cam.getWorldPoint(ptr.x, ptr.y);
+      const cx = wp.x, cy = wp.y;
+
+      s.floatText(s.p.x, s.p.y - 30, '☄️ メテオ・フォール！', '#ff3366', '16px', 800);
+
+      for (let i = 0; i < 5; i++) {
+        s.time.delayedCall(i * 110, () => {
+          const ox = (Math.random() - 0.5) * 140;
+          const oy = (Math.random() - 0.5) * 140;
+          const tx = cx + ox, ty = cy + oy;
+
+          // 着弾予兆リング
+          const warn = s.add.circle(tx, ty, 55, 0xff0044, 0.25).setStrokeStyle(2, 0xff3366).setDepth(2);
+
+          s.time.delayedCall(220, () => {
+            warn.destroy();
+            s.cameras.main.shake(120, 0.012);
+
+            // 爆発エフェクト
+            const boom = s.add.circle(tx, ty, 60, 0xff2200, 0.85).setDepth(4);
+            const core = s.add.circle(tx, ty, 30, 0xffffff, 0.95).setDepth(5);
+            s.tweens.add({ targets: [boom, core], scale: 1.5, alpha: 0, duration: 280, onComplete: () => { boom.destroy(); core.destroy(); } });
+
+            let hitCount = 0;
+            s.enemies.forEach(e => {
+              if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - tx, e.c.y - ty) < e.r + 60) {
+                s.damage(e, Math.round(dmg * 1.4));
+                e.stunUntil = Math.max(e.stunUntil || 0, s.time.now + 800);
+                hitCount++;
+              }
+            });
+
+            if (hitCount > 0) {
+              const add = hitCount * 8;
+              s.apoGauge = Math.min(100, (s.apoGauge || 0) + add);
+              s.floatText(s.p.x, s.p.y - 30, `終末 +${add}`, '#ff3366', '13px', 500);
+            }
+          });
+        });
+      }
     }
   }
 };
@@ -1736,20 +1860,20 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.atk)) this.attack();
     if (Phaser.Input.Keyboard.JustDown(k.skill)) this.skill();
     
-    /*if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
+    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon2)) this.obtainBossWeapon('eruption_wand');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon3)) this.obtainBossWeapon('dragon_chain');
-    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');*/
+    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');
     if (Phaser.Input.Keyboard.JustDown(k.swap)) this.swapWeapon();
     if (Phaser.Input.Keyboard.JustDown(k.stock1)) this.castSpellbookSkill(0);
     if (Phaser.Input.Keyboard.JustDown(k.stock2)) this.castSpellbookSkill(1);
     if (Phaser.Input.Keyboard.JustDown(k.stock3)) this.castSpellbookSkill(2);
-    //if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
-    /*if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
+    if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
+    if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
       SAVE.cleared = Math.max(SAVE.cleared, 60);
       saveGame();
       this.travel(60, maxHp(), 'デバッグ: 60Fへワープしました');
-    }*/
+    }
     if (Phaser.Input.Keyboard.JustDown(k.exs)) this.castExS();//exs
 
     if (Phaser.Input.Keyboard.JustDown(k.subSkill)) this.subSkill();
@@ -2045,13 +2169,44 @@ class Main extends Phaser.Scene {
         return this.popup('蒼焔ゲージ不足 (80必要)', '#a0a7b8');
       }
       this.souenGauge -= 80;
-      const dmg = 3000 * 2.0; // 攻撃力3000の200%
+      const dmg = Math.round(atkTotal(this) * 2.0); // 攻撃力3000の200%
 
       for (let i = 0; i < 10; i++) {
         this.time.delayedCall(i * 80, () => {
           this.cameras.main.shake(60, 0.005);
           this.strike(0, Math.PI, 140, dmg, 0x00ffff);
           this.floatText(this.p.x, this.p.y - 40, '🔥 蒼焔乱舞！', '#00ffff', '16px', 600);
+        });
+      }
+      return;
+    }
+    if (weapon && weapon.type === 'apocalypse') {
+      if ((this.apoGauge || 0) < 60) {
+        return this.popup('終末ゲージ不足 (60必要)', '#a0a7b8');
+      }
+      this.apoGauge -= 60;
+      const dmg = Math.round(atkTotal(this) * 3.0); // 300% × 8ヒット = 2400%
+      const cx = this.p.x, cy = this.p.y;
+
+      this.popup('🌑 終末の審判・ブラックホール！', '#ff3366', 1);
+
+      for (let i = 0; i < 8; i++) {
+        this.time.delayedCall(i * 90, () => {
+          this.cameras.main.shake(80, 0.008);
+          const hole = this.add.circle(cx, cy, 160, 0x220033, 0.45).setStrokeStyle(3, 0xff1144).setDepth(2);
+          this.tweens.add({ targets: hole, scale: 0.4, alpha: 0, duration: 220, onComplete: () => hole.destroy() });
+
+          this.enemies.forEach(e => {
+            if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - cx, e.c.y - cy) < e.r + 170) {
+              // 中心へ引き寄せ
+              const pullX = e.c.x + (cx - e.c.x) * 0.25;
+              const pullY = e.c.y + (cy - e.c.y) * 0.25;
+              if (free(pullX, e.c.y, e.r)) e.c.x = pullX;
+              if (free(e.c.x, pullY, e.r)) e.c.y = pullY;
+
+              this.damage(e, dmg);
+            }
+          });
         });
       }
       return;
@@ -2297,6 +2452,11 @@ class Main extends Phaser.Scene {
     const addAmount = hitCountInThisStrike * opts.souenPerHit;
     this.souenGauge = Math.min(120, (this.souenGauge || 0) + addAmount);
     this.floatText(p.x, p.y - 30, `蒼焔 +${addAmount}`, '#00ffff', '13px', 500);
+  }
+  if (hitCountInThisStrike > 0 && opts.apoPerHit) {
+    const addAmount = hitCountInThisStrike * opts.apoPerHit;
+    this.apoGauge = Math.min(100, (this.apoGauge || 0) + addAmount);
+    this.floatText(p.x, p.y - 30, `終末 +${addAmount}`, '#ff3366', '13px', 500);
   }
 
   // ★ Qスキルのレベルアップ判定
@@ -2549,12 +2709,12 @@ class Main extends Phaser.Scene {
   if (this.leaving || this.dodge) return;
 
   // ★ メイン武器が「無尾」の場合は切り替え不可
-  if (weapon && weapon.type === 'mubi') {
+  if (weapon && (weapon.type === 'mubi'|| weapon.type === 'apocalypse')) {
     return this.popup('「無尾」装備中は武器の切り替えができません', '#a0a7b8');
     }
 
     // サブ武器が未装備の場合、またはサブ武器が無尾の場合は切り替え不可
-  if (!EQUIPPED.sub_weapon || EQUIPPED.sub_weapon.type === 'mubi') {
+  if (!EQUIPPED.sub_weapon || EQUIPPED.sub_weapon.type === 'mubi'|| weapon.type === 'apocalypse') {
     return this.popup('サブ武器が装備されていません', '#a0a7b8');
     }
   // サブ武器が未装備の場合は切り替え不可（またはメッセージ表示）
@@ -2659,8 +2819,8 @@ class Main extends Phaser.Scene {
         return this.popup('蒼焔ゲージ不足 (120必要)', '#a0a7b8');
       }
       this.souenGauge = 0; // 全消費
-      const atk = 3000;
-      const dmg = atk * 3.0; // 300%
+      const atk = atkTotal(this);
+      const dmg = Math.round(atk * 3.0); // 300%
 
       this.cameras.main.shake(400, 0.02);
       this.popup('❄️ 蒼焔・絶対凍結陣！', '#00ffff', 1);
@@ -2689,6 +2849,42 @@ class Main extends Phaser.Scene {
           });
         });
       }
+      return;
+    }
+    if (weapon && weapon.type === 'apocalypse') {
+      if ((this.apoGauge || 0) < 100) {
+        return this.popup('終末ゲージ不足 (100必要)', '#a0a7b8');
+      }
+      this.apoGauge = 0;
+      const atk = atkTotal(this);
+      const dmg = Math.round(atk * 35.0); // 3500%の超絶終末ダメージ
+
+      // 画面暗転＆巨大崩壊フラッシュ
+      const darkBg = this.add.rectangle(this.p.x, this.p.y, this.scale.width * 2, this.scale.height * 2, 0x110018, 0.75).setDepth(4);
+      this.cameras.main.shake(600, 0.03);
+      this.popup('☄️ 終焉奥義【アポカリプス・ノヴァ】！', '#ff1144', 1);
+
+      // HP30%即時回復
+      const healAmt = Math.round(maxHp() * 0.3);
+      this.hp = Math.min(maxHp(), this.hp + healAmt);
+      this.floatText(this.p.x, this.p.y - 45, `+${healAmt} HP`, '#7cf0a0', '18px', 1200);
+
+      this.time.delayedCall(250, () => {
+        darkBg.destroy();
+        this.cameras.main.flash(350, 255, 30, 80);
+
+        this.enemies.forEach(e => {
+          if (e.hp > 0 && !e.isAllyMinion) {
+            // ★ ボスの魔力バリアを強制破壊！
+            if (e.boss && e.isShielded) {
+              e.isShielded = false;
+              this.floatText(e.c.x, e.c.y - 40, '💥 終末の力でバリア粉砕！', '#ff3366', '18px', 1200);
+            }
+            this.damage(e, dmg);
+            e.stunUntil = this.time.now + 4000; // 4秒間完全行動不能
+          }
+        });
+      });
       return;
     }
   const n = this.time.now;
@@ -2822,6 +3018,7 @@ class HudScene extends Phaser.Scene {
 
     const currentWeapon = (typeof weapon !== 'undefined') ? weapon : null;
     const isMubiEquipped = currentWeapon && currentWeapon.type === 'mubi';
+    const isApoEquipped = currentWeapon && currentWeapon.type === 'apocalypse';
 
     // ==========================================
     // 1. 左上：ステータス＆HP/EXPパネル (ステータスボーナス表示追加！)
@@ -2886,10 +3083,27 @@ class HudScene extends Phaser.Scene {
       this.souenText.setText(`蒼焔 ${Math.floor(souenVal)} / 120`);
 
       this.statBonusText.setPosition(72, 66);
+    } else if (isApoEquipped) {
+      const apoVal = Math.min(100, Math.max(0, main.apoGauge || 0));
+      const apoRatio = apoVal / 100;
+
+      this.uiGfx.fillStyle(0x330011, 1);
+      this.uiGfx.fillRect(hpBarX, 48, hpBarWidth, 10);
+      this.uiGfx.fillStyle(0xff1144, 1);
+      this.uiGfx.fillRect(hpBarX, 48, hpBarWidth * apoRatio, 10);
+      this.uiGfx.lineStyle(1, 0xff3366, 0.8);
+      this.uiGfx.strokeRect(hpBarX, 48, hpBarWidth, 10);
+
+      this.souenText.setVisible(true);
+      this.souenText.setColor('#ff6688');
+      this.souenText.setPosition(hpBarX + 55, 47);
+      this.souenText.setText(`終末 ${Math.floor(apoVal)} / 100`);
+
+      this.statBonusText.setPosition(72, 66);
     } else {
       this.souenText.setVisible(false);
       this.statBonusText.setPosition(72, 52);
-    }
+    } 
 
     // ★ ステータスボーナス（振り分けポイント）の描画
     const hpBonus = PLAYER.hpPts * HP_PER_PT;
@@ -3880,7 +4094,7 @@ class ExsGachaScene extends MenuScene {
     this.headText.setText(`所持金: ${PLAYER.gold} G  |  現在セット中: ${EXS_LIST[equippedExsId] ? EXS_LIST[equippedExsId].name : 'なし'}`);
 
     // ボタン描画
-    this.btn(w / 2 - 110, 390, '1回引く (5000G)', () => this.drawGacha(), PLAYER.gold >= 1000);
+    this.btn(w / 2 - 110, 390, '1回引く (5000G)', () => this.drawGacha(), PLAYER.gold >= 5000);
     this.btn(w / 2 + 110, 390, '閉じる (ESC)', () => this.close());
   }
 
@@ -3893,7 +4107,22 @@ class ExsGachaScene extends MenuScene {
     }
 
     this.noteText.setText('');
-    
+    //アポカリプスの設定
+    if (Math.random() < 0.005) {
+      const success = getApocalypse();
+      if (success) {
+        this.resultText.setText('✦✦✦ 終焉降臨！ [Legend] アポカリプス ✦✦✦').setColor('#ff3366');
+        this.descText.setText('【メイン武器】バッグに「アポカリプス」を獲得しました！（Iキーで確認）');
+        this.noteText.setText('');
+      } else {
+        PLAYER.gold += cost;
+        this.resultText.setText('✦ [Legend] アポカリプス が当選しました！').setColor('#ff4444');
+        this.descText.setText('ですがバッグが満杯のため入手できませんでした（5000Gは返金されました）。');
+        this.noteText.setText('バッグに空きを作ってから再度お試しください。');
+      }
+      this.render();
+      return;
+    }
     // ★ 1. 伝説「武器」としての無尾の抽選 (0.5%)
     if (Math.random() < 0.01) {
       const success = getMubi();
