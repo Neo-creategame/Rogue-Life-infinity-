@@ -80,7 +80,7 @@ const TOWN_SHOPS = [['お店', 6, 5], ['宿屋', 17, 5], ['鍛冶屋', 28, 5], [
 // ---- セーブ＆ロード機能 ----
 const SAVE_KEY = 'alone_rpg_save_data_v1';
 // バージョン管理と更新履歴
-const GAME_VERSION = '2.1.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
+const GAME_VERSION = '2.2.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
 const VERSION_KEY = 'alone_rpg_seen_version';
 /*'✦ Ver 1..0 アップデート情報 ✦',
   '',
@@ -88,6 +88,14 @@ const VERSION_KEY = 'alone_rpg_seen_version';
   '・',
   '',*/
 const PATCH_NOTES = [
+  '✦ Ver 2.2.0 アップデート情報 ✦',
+  '',
+  '【新要素】',
+  '・属性を持ったボスが新たに登場！それぞれのボスにあった属性で攻略しよう！',
+  '',
+  '【修正】',
+  '・Leagend武器の攻撃力計算方法の変更',
+  '',
   '✦ Ver 2.1.0 アップデート情報 ✦',
   '',
   '【新要素】',
@@ -324,6 +332,8 @@ const WEAPONS = {
   },
 
 };
+// 「無尾」または「アポカリプス」かどうかを判定
+const isRestrictedLegend = it => !!(it && (it.type === 'mubi' || it.type === 'apocalypse'));
 // ---- ExS (Extra Skill) の定義リスト ----
 // ---- ExS (Extra Skill) の定義リスト ----
 const EXS_LIST = {
@@ -1451,6 +1461,21 @@ const BOSS_FLOORS = {
   55: { type: 'golem',        trait: 'anti_range',       name: '【結界の守護者】アンチ・レンジゴーレム' },
   60: { type: 'dragon',       trait: 'dragon_emperor',       name: '【暴君】真紅の皇帝 レッドドラゴン' }
 };
+// ★ 400階以降ボス用：弱点ローテーション定義
+const BOSS_WEAKNESS_MODES = [
+  { id: 'melee',  label: '弱点:近接攻撃', color: 0xff6a6a, textCol: '#ff6a6a' },
+  { id: 'ranged', label: '弱点:遠距離弾', color: 0x4fd1c5, textCol: '#4fd1c5' },
+  { id: 'skill',  label: '弱点:スキル/大技', color: 0xffd36a, textCol: '#ffd36a' }
+];
+
+// 攻撃の種類を判定するヘルパー
+const getAttackCategory = (scene, isProjectile = false) => {
+  if (scene.isCastingSkill || scene.isCastingSubOrExs) return 'skill';
+  if (isProjectile) return 'ranged';
+  const rangedTypes = ['bow', 'eruption_wand', 'lightning_staff'];
+  if (weapon && rangedTypes.includes(weapon.type)) return 'ranged';
+  return 'melee';
+};
 const DEFAULT_BOSS_CONFIG = { type: 'golem', trait: null, name: '階層の番人' };
 // ★ 階層帯ごとのレアモンスター定義
 const RARE_MONSTERS = [
@@ -1650,6 +1675,17 @@ class Main extends Phaser.Scene {
       this.boss.bossType = bossConfig.type;
       this.boss.trait = bossConfig.trait;
       this.boss.bossName = bossConfig.name;
+      if (this.floor >= 300) {
+        this.boss.weaknessIdx = Math.floor(Math.random() * BOSS_WEAKNESS_MODES.length);
+        this.boss.breakGauge = 0;      // 0 〜 100
+        this.boss.breakMax = 100;
+        this.boss.isBroken = false;
+        this.boss.breakUntil = 0;
+        this.time.delayedCall(500, () => {
+          const wMode = BOSS_WEAKNESS_MODES[this.boss.weaknessIdx];
+          this.popup(`⚠️ 適応の装甲展開！【${wMode.label}】を突け！`, wMode.textCol, 1);
+        });
+      }
 
       // 暗幕ステルス奇襲（ニンジャ）の初期設定
       if (bossConfig.type === 'ninja') {
@@ -1870,9 +1906,9 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.stock3)) this.castSpellbookSkill(2);
     if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
     /*if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
-      SAVE.cleared = Math.max(SAVE.cleared, 60);
+      SAVE.cleared = Math.max(SAVE.cleared, 400);
       saveGame();
-      this.travel(60, maxHp(), 'デバッグ: 60Fへワープしました');
+      this.travel(60, maxHp(), 'デバッグ: 400Fへワープしました');
     }*/
     if (Phaser.Input.Keyboard.JustDown(k.exs)) this.castExS();//exs
 
@@ -2058,7 +2094,13 @@ class Main extends Phaser.Scene {
         }
       }
     }
-
+    if (this.boss && this.boss.hp > 0 && this.boss.isBroken && now >= this.boss.breakUntil) {
+      this.boss.isBroken = false;
+      this.boss.breakGauge = 0;
+      this.boss.weaknessIdx = (this.boss.weaknessIdx + 1) % BOSS_WEAKNESS_MODES.length;
+      const nextW = BOSS_WEAKNESS_MODES[this.boss.weaknessIdx];
+      this.popup(`⚠️ 装甲再生！次の弱点は【${nextW.label}】！`, nextW.textCol, 1);
+    }
     if (this.hp <= 0 && !this.leaving) this.die();
     p.setAlpha(this.dodge || now < this.dodgeUntil ? 0.35 : now < this.inv ? 0.5 : 1);
     
@@ -2150,6 +2192,7 @@ class Main extends Phaser.Scene {
     const n = this.time.now;
     if (n < this.nextAtk || this.dodge || this.leaving) return;
     this.nextAtk = n + weapon.cd;
+    this.isCastingSkill = false;
     BEHAVIORS[weapon.type].attack(this, atkTotal(this));
     this.useWeapon(DURABILITY.weaponAttack);
   }
@@ -2169,6 +2212,8 @@ class Main extends Phaser.Scene {
         return this.popup('蒼焔ゲージ不足 (80必要)', '#a0a7b8');
       }
       this.souenGauge -= 80;
+      this.isCastingSubOrExs = true;
+      this.time.delayedCall(1200, () => { this.isCastingSubOrExs = false; });
       const dmg = Math.round(atkTotal(this) * 2.0); // 攻撃力3000の200%
 
       for (let i = 0; i < 10; i++) {
@@ -2185,6 +2230,8 @@ class Main extends Phaser.Scene {
         return this.popup('終末ゲージ不足 (60必要)', '#a0a7b8');
       }
       this.apoGauge -= 60;
+      this.isCastingSubOrExs = true;
+      this.time.delayedCall(1200, () => { this.isCastingSubOrExs = false; });
       const dmg = Math.round(atkTotal(this) * 3.0); // 300% × 8ヒット = 2400%
       const cx = this.p.x, cy = this.p.y;
 
@@ -2472,7 +2519,7 @@ class Main extends Phaser.Scene {
   this.enemies = this.enemies.filter(e => e.hp > 0);
 }
 
-  damage(e, dmg) {
+  damage(e, dmg, isProjectile = false) {
     if (e.hp <= 0) return;
 
     // ★ シャドウ・ファントムの透明無敵判定（飛んできてからの実体化3秒間以外はダメージ無効）
@@ -2544,6 +2591,39 @@ class Main extends Phaser.Scene {
     const ky = e.c.y + Math.sin(angleFromPlayer) * pushDist;
     if (free(kx, e.c.y, e.r)) e.c.x = kx;
     if (free(e.c.x, ky, e.r)) e.c.y = ky;
+    if (e.boss && this.floor >= 300 && e.weaknessIdx != null) {
+      const now = this.time.now;
+      if (e.isBroken) {
+        // ブレイク中は全攻撃 2.5倍ダメージ！
+        dmg = Math.round(dmg * 2.5);
+        this.floatText(e.c.x, e.c.y - 40, 'BREAK HIT!!', '#ffd36a', '13px', 400);
+      } else {
+        const currentWeakness = BOSS_WEAKNESS_MODES[e.weaknessIdx];
+        const atkCat = getAttackCategory(this, isProjectile);
+
+        if (atkCat === currentWeakness.id) {
+          // 弱点一致：ダメージ1.2倍 ＋ ブレイクゲージ蓄積（スキルは蓄積量多め）
+          dmg = Math.round(dmg * 1.2);
+          const gaugeAdd = atkCat === 'skill' ? 22 : 12;
+          e.breakGauge = Math.min(e.breakMax, (e.breakGauge || 0) + gaugeAdd);
+          this.floatText(e.c.x, e.c.y - 36, `WEAK! +${gaugeAdd}%`, currentWeakness.textCol, '13px', 450);
+
+          // ゲージ100%でブレイク発動！
+          if (e.breakGauge >= e.breakMax) {
+            e.isBroken = true;
+            e.breakUntil = now + 3500; // 3.5秒間ブレイク
+            e.stunUntil = now + 3500;  // 完全行動不能
+            if (e.ai) e.ai.state = 'chase'; // 予知攻撃も強制キャンセル
+            this.cameras.main.shake(250, 0.015);
+            this.popup('💥 ARMOR BREAK!! 3.5秒間被ダメージ2.5倍！', '#ffd36a', 1);
+          }
+        } else {
+          // 弱点不一致：ダメージ軽減（0.75倍）
+          dmg = Math.round(dmg * 0.75);
+          this.floatText(e.c.x, e.c.y - 36, `RESIST (${currentWeakness.label})`, '#a0a7b8', '11px', 400);
+        }
+      }
+    }
 
     if (e.boss) dmg = Math.round(dmg * bossDmgMult());
     e.hp -= dmg;
@@ -2684,7 +2764,7 @@ class Main extends Phaser.Scene {
       }
 
       const hit = this.enemies.find(e => e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - r.o.x, e.c.y - r.o.y) < e.r + 4);
-      if (hit) this.damage(hit, r.dmg);
+      if (hit) this.damage(hit, r.dmg, true);
       
       const gone = hit || r.left <= 0 || solid(r.o.x, r.o.y);
       if (gone) r.o.destroy();
@@ -2708,19 +2788,18 @@ class Main extends Phaser.Scene {
   swapWeapon() {
   if (this.leaving || this.dodge) return;
 
-  // ★ メイン武器が「無尾」の場合は切り替え不可
-  if (weapon && (weapon.type === 'mubi'|| weapon.type === 'apocalypse')) {
-    return this.popup('「無尾」装備中は武器の切り替えができません', '#a0a7b8');
+  if (isRestrictedLegend(weapon)) {
+      return this.popup(`「${weapon.name}」装備中は武器の切り替えができません`, '#a0a7b8');
     }
 
     // サブ武器が未装備の場合、またはサブ武器が無尾の場合は切り替え不可
-  if (!EQUIPPED.sub_weapon || EQUIPPED.sub_weapon.type === 'mubi'|| weapon.type === 'apocalypse') {
-    return this.popup('サブ武器が装備されていません', '#a0a7b8');
+  if (!EQUIPPED.sub_weapon || isRestrictedLegend(EQUIPPED.sub_weapon)) {
+      return this.popup('サブ武器が装備されていません', '#a0a7b8');
     }
   // サブ武器が未装備の場合は切り替え不可（またはメッセージ表示）
-  if (!EQUIPPED.sub_weapon) {
+  /*if (!EQUIPPED.sub_weapon) {
     return this.popup('サブ武器が装備されていません', '#a0a7b8');
-  }
+  }*/
 
   // メイン武器とサブ武器を入れ替え
   const temp = weapon;
@@ -2760,6 +2839,8 @@ class Main extends Phaser.Scene {
   // セットされた武器のスキルエフェクトを実行
   const behavior = BEHAVIORS[targetWeapon.type];
   if (behavior && behavior.skill) {
+    this.isCastingSubOrExs = true;
+    this.time.delayedCall(1200, () => { this.isCastingSubOrExs = false; });
     behavior.skill(this, spellDmg);
     this.floatText(this.p.x, this.p.y - 25, `✦ ${targetWeapon.skill.name}`, '#d98cff', '15px', 800);
     this.useWeapon(DURABILITY.weaponSkill);
@@ -2819,6 +2900,8 @@ class Main extends Phaser.Scene {
         return this.popup('蒼焔ゲージ不足 (120必要)', '#a0a7b8');
       }
       this.souenGauge = 0; // 全消費
+      this.isCastingSubOrExs = true;
+      this.time.delayedCall(1200, () => { this.isCastingSubOrExs = false; });
       const atk = atkTotal(this);
       const dmg = Math.round(atk * 3.0); // 300%
 
@@ -2856,6 +2939,8 @@ class Main extends Phaser.Scene {
         return this.popup('終末ゲージ不足 (100必要)', '#a0a7b8');
       }
       this.apoGauge = 0;
+      this.isCastingSubOrExs = true;
+      this.time.delayedCall(1200, () => { this.isCastingSubOrExs = false; });
       const atk = atkTotal(this);
       const dmg = Math.round(atk * 35.0); // 3500%の超絶終末ダメージ
 
@@ -2897,6 +2982,8 @@ class Main extends Phaser.Scene {
   if (!exsDef) return;
 
   exsGauge = 0; // ゲージ消費
+  this.isCastingSubOrExs = true;
+  this.time.delayedCall(1200, () => { this.isCastingSubOrExs = false; });
   const lv = ownedExs[equippedExsId] || 1;
   const baseDmg = atkTotal(this) * (1 + (lv - 1) * 0.15); // レベルごとの威力補正
 
@@ -3155,8 +3242,32 @@ class HudScene extends Phaser.Scene {
 
       // ボス名のテキスト更新
       // ボス名のテキスト更新 (オプショナルチェイニング `?.` で安全化)
-      if (this.bossNameText) this.bossNameText.setText(boss.bossName || '階層の番人');
+      // ★ 修正後（HudScene.setLines 内）
+      if (this.bossNameText) {
+        let titleStr = boss.bossName || '階層の番人';
+        if (boss.weaknessIdx != null) {
+          const wMode = BOSS_WEAKNESS_MODES[boss.weaknessIdx];
+          titleStr += boss.isBroken ? '  【💥BREAK中!!】' : `  【${wMode.label}】`;
+          this.bossNameText.setColor(boss.isBroken ? '#ffd36a' : wMode.textCol);
+        } else {
+          this.bossNameText.setColor('#ffd36a');
+        }
+        this.bossNameText.setText(titleStr);
+      }
       if (this.bossHpText) this.bossHpText.setText(`HP ${bCurHp} / ${bMaxHp}${boss.isShielded ? ' [BARRIER]' : ''}`);
+
+      if (boss.weaknessIdx != null) {
+        const wMode = BOSS_WEAKNESS_MODES[boss.weaknessIdx];
+        const bkY = bBarY + bBarHeight + 4;
+        const bkRatio = boss.isBroken
+          ? Math.max(0, (boss.breakUntil - now) / 3500)
+          : Math.min(1, (boss.breakGauge || 0) / (boss.breakMax || 100));
+
+        this.uiGfx.fillStyle(0x1a202c, 1);
+        this.uiGfx.fillRect(bBarX, bkY, bBarWidth, 6);
+        this.uiGfx.fillStyle(boss.isBroken ? 0xffd36a : wMode.color, 1);
+        this.uiGfx.fillRect(bBarX, bkY, bBarWidth * bkRatio, 6);
+      }
     } else {
       if (this.bossNameText) this.bossNameText.setText('');
       if (this.bossHpText) this.bossHpText.setText('');
@@ -3584,9 +3695,8 @@ class BackpackScene extends MenuScene {
   // 大技スロットクリック時の所持ExS切り替え
   // 大技スロットクリック時の所持ExS切り替え
   cycleExs() {
-    // ★ メイン武器が「無尾」の場合は大技の切り替え（装備）を禁止
-    if (weapon && weapon.type === 'mubi') {
-      return this.noteText.setText('「無尾」を装備中は大技（ExS）をセットできません');
+    if (isRestrictedLegend(weapon)) {
+      return this.noteText.setText(`「${weapon.name}」を装備中は大技（ExS）をセットできません`);
     }
 
     const ownedKeys = Object.keys(ownedExs);
@@ -3605,25 +3715,23 @@ class BackpackScene extends MenuScene {
   }
 
   move(src, dst) {
-    // ★ 大技（exs）枠への操作を完全ガード
     if ((src.kind === 'eq' && src.key === 'exs') || (dst.kind === 'eq' && dst.key === 'exs')) {
       return this.noteText.setText('大技枠はドラッグ操作できません（クリックで切り替え）');
     }
 
     const a = this.get(src), b = this.get(dst);
+    const isLegendEquipped = isRestrictedLegend(weapon);
 
-    // ★ 現在メイン武器に「無尾」が装備されているかチェック
-    const isMubiEquipped = weapon && weapon.type === 'mubi';
-
-    // 1. 「無尾」自体を副武器枠へセットするのを禁止
-    if ((a && a.type === 'mubi' && dst.kind === 'eq' && dst.key === 'sub_weapon') ||
-        (b && b.type === 'mubi' && src.kind === 'eq' && src.key === 'sub_weapon')) {
-      return this.noteText.setText('「無尾」は副武器にセットできません');
+    // 1. 制限武器自体を副武器枠へセットするのを禁止
+    if ((isRestrictedLegend(a) && dst.kind === 'eq' && dst.key === 'sub_weapon') ||
+        (isRestrictedLegend(b) && src.kind === 'eq' && src.key === 'sub_weapon')) {
+      const target = isRestrictedLegend(a) ? a : b;
+      return this.noteText.setText(`「${target.name}」は副武器にセットできません`);
     }
 
-    // 2. メイン武器が「無尾」のときに副武器枠へアイテムを移動・セットするのを禁止（追加）
-    if (isMubiEquipped && (dst.key === 'sub_weapon' || src.key === 'sub_weapon')) {
-      return this.noteText.setText('「無尾」を装備中は副武器を装備できません');
+    // 2. メイン武器が制限武器のときに副武器枠へアイテムを移動・セットするのを禁止
+    if (isLegendEquipped && (dst.key === 'sub_weapon' || src.key === 'sub_weapon')) {
+      return this.noteText.setText(`「${weapon.name}」を装備中は副武器を装備できません`);
     }
 
     const fits = (l, it) => {
@@ -3638,22 +3746,21 @@ class BackpackScene extends MenuScene {
     this.set(src, b); 
     this.set(dst, a);
 
-    // 「無尾」をメイン武器にセットした瞬間、既存の副武器とExSを自動解除する処理
-    if (weapon && weapon.type === 'mubi') {
+    // 制限武器をメイン武器にセットした瞬間、既存の副武器とExSを自動解除する処理
+    if (isRestrictedLegend(weapon)) {
       if (EQUIPPED.sub_weapon) {
         addToPack(EQUIPPED.sub_weapon);
         EQUIPPED.sub_weapon = null;
       }
       equippedExsId = null;
-      this.noteText.setText('「無尾」を装備したため、副武器とExSが解除されました');
+      this.noteText.setText(`「${weapon.name}」を装備したため、副武器とExSが解除されました`);
     }
-    // ★ 追記不足分：「無尾」が副武器枠へ移動・入れ替わってしまった場合は副武器から外してバッグへ戻す
-    else if (EQUIPPED.sub_weapon && EQUIPPED.sub_weapon.type === 'mubi') {
-      const mubiInSub = EQUIPPED.sub_weapon;
+    // 万が一副武器枠へ移動・入れ替わってしまった場合はバッグへ戻す
+    else if (isRestrictedLegend(EQUIPPED.sub_weapon)) {
+      const subItem = EQUIPPED.sub_weapon;
       EQUIPPED.sub_weapon = null;
-      addToPack(mubiInSub);
-      this.noteText.setText('「無尾」は副武器に装備できないため、バッグに戻されました');
-      this.noteText.setText('');
+      addToPack(subItem);
+      this.noteText.setText(`「${subItem.name}」は副武器に装備できないため、バッグに戻されました`);
     }
     
     const m = this.scene.get('main'); 
