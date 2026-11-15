@@ -75,19 +75,28 @@ const isSub = f => !Number.isInteger(f);
 const nextFloor = f => f === 0 ? 1 : f + 0.5;
 const floorIdx = f => Math.round(f * 2) - 1;
 const floorList = c => { const out = []; for (let f = 1; f <= c + 1e-9; f += 0.5) out.push(f); return out; };
-const SAVE = { cleared: 0 };
+const SAVE = { cleared: 0, autoSell: false };
 const TOWN_SHOPS = [['お店', 6, 5], ['宿屋', 17, 5], ['鍛冶屋', 28, 5], ['倉庫', 6, 14], ['ガチャ屋', 12, 14]];
 // ---- セーブ＆ロード機能 ----
 const SAVE_KEY = 'alone_rpg_save_data_v1';
 // バージョン管理と更新履歴
-const GAME_VERSION = '2.2.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
+const GAME_VERSION = '2.3.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
 const VERSION_KEY = 'alone_rpg_seen_version';
-/*'✦ Ver 1..0 アップデート情報 ✦',
+/*'✦ Ver 2..0 アップデート情報 ✦',
   '',
   '【】',
   '・',
   '',*/
 const PATCH_NOTES = [
+  '✦ Ver 2.3.0 アップデート情報 ✦',
+  '',
+  '【新要素】',
+  '・新Legend武器が２つ登場！！アストラルとクロノスボウは新ギミックを搭載！！',
+  '・200階以上のプレイヤー限定！攻略がしやすくなる装備の自動分解を実装',
+  '',
+  '【修正】',
+  '・ポーズメニューの配列の調整',
+  '',
   '✦ Ver 2.2.0 アップデート情報 ✦',
   '',
   '【新要素】',
@@ -168,6 +177,7 @@ function saveGame() {
   try {
     const data = {
       cleared: SAVE.cleared,
+      autoSell: SAVE.autoSell,
       player: { ...PLAYER },
       potions: { ...POTIONS },
       weapon: weapon,
@@ -187,35 +197,25 @@ function saveGame() {
     return false;
   }
 }
-// 「無尾」をバッグに追加してセーブする共通関数
-function getMubi() {
-  const targetFloor = Math.max(1, SAVE.cleared || 1);
-  const mubiItem = rollWeapon('mubi', targetFloor);
-  const added = addToPack(mubiItem);
-  
-  if (added) {
-    saveGame(); // 入手成功時に自動セーブ
-    console.log('✦ [Legend] 無尾 を獲得しました！');
-  } else {
-    console.warn('バッグが満杯のため「無尾」を入手できませんでした。');
-  }
-  
-  return added; // 成功なら true, バッグ満杯なら false を返す
-}
+const LEGEND_BASE_ATK = {
+  mubi: 500,
+  astral_orb: 500,
+  apocalypse: 750,
+  chronos_bow: 800
+};
+const isLegendWeapon = w => !!(w && LEGEND_BASE_ATK[w.type]);
 
-function getApocalypse() {
+function getLegendWeapon(type) {
   const targetFloor = Math.max(1, SAVE.cleared || 1);
-  const apoItem = rollWeapon('apocalypse', targetFloor);
-  const added = addToPack(apoItem);
-
+  const item = rollWeapon(type, targetFloor);
+  const added = addToPack(item);
   if (added) {
     saveGame();
-    console.log(`✦ [Legend] アポカリプス (攻撃力:${apoItem.atk}) を獲得しました！`);
-  } else {
-    console.warn('バッグが満杯のため「アポカリプス」を入手できませんでした。');
+    console.log(`✦ [Legend] ${item.name} (攻撃力:${item.atk}) を獲得しました！`);
   }
   return added;
 }
+    
 // データを読み込む
 function loadGame() {
   try {
@@ -224,6 +224,7 @@ function loadGame() {
     const data = JSON.parse(json);
 
     SAVE.cleared = data.cleared || 0;
+    SAVE.autoSell = !!data.autoSell;
     Object.assign(PLAYER, data.player);
     Object.assign(POTIONS, data.potions);
     weapon = data.weapon;
@@ -242,7 +243,7 @@ function loadGame() {
     const targetFloor = Math.max(1, SAVE.cleared || 1);
     const allItems = [weapon, ...BACKPACK, ...STORAGE, ...Object.values(EQUIPPED)];
     allItems.forEach(it => {
-      if (it && (it.type === 'mubi'|| it.type === 'apocalypse')) {
+      if (isLegendWeapon(it)) {
         const baseVal = it.type === 'apocalypse' ? 750 : 500;
         const baseScaled = Math.round(baseVal * weaponFloorMult(targetFloor));
         // すでに鍛冶屋で強化(+lv)していた分も維持して計算
@@ -253,7 +254,7 @@ function loadGame() {
         }
       }
     });
-    if (weapon && (weapon.type === 'mubi'|| weapon.type === 'apocalypse')) {
+    if (isLegendWeapon(weapon)) {
       if (EQUIPPED.sub_weapon) {
         addToPack(EQUIPPED.sub_weapon);
         EQUIPPED.sub_weapon = null;
@@ -330,11 +331,30 @@ const WEAPONS = {
     isLegend: true,
     skill: { name: 'メテオ・フォール', cd: 4500 }
   },
+  astral_orb: {
+    name: 'アストラル・オーブ',
+    baseAtk: 500,
+    base: 500,
+    cd: 350,
+    range: 420,
+    speedMult: 1.1,
+    isLegend: true,
+    skill: { name: 'アストラル・パルス', cd: 4000 }
+  },
+  chronos_bow: {
+    name: 'クロノス・ボウ',
+    baseAtk: 800,
+    base: 800,
+    cd: 420,
+    range: 520,
+    speedMult: 1.2,
+    isLegend: true,
+    skill: { name: 'バックステップ・アロー', cd: 4000 }
+  },
 
 };
 // 「無尾」または「アポカリプス」かどうかを判定
-const isRestrictedLegend = it => !!(it && (it.type === 'mubi' || it.type === 'apocalypse'));
-// ---- ExS (Extra Skill) の定義リスト ----
+const isRestrictedLegend = it => isLegendWeapon(it);
 // ---- ExS (Extra Skill) の定義リスト ----
 const EXS_LIST = {
   // ★ SSR: 星見雅風 霜月・零式「霜雪一閃」
@@ -548,7 +568,7 @@ const rollWeapon = (type, floor = 1) => {
   let cd = baseDef.cd;
   if (baseDef.isLegend) {
     const targetFloor = Math.max(floor, SAVE.cleared || 1);
-    const baseVal = type === 'apocalypse' ? 750 : 500;
+    const baseVal = LEGEND_BASE_ATK[type] || 500;
     const scaledAtk = Math.round(baseVal * weaponFloorMult(targetFloor));
     return {
       type: type,
@@ -557,7 +577,7 @@ const rollWeapon = (type, floor = 1) => {
       cd: baseDef.cd,
       range: baseDef.range,
       speedMult: baseDef.speedMult,
-      speed: 500, // 他の武器同様にspeedプロパティを設定
+      speed: type === 'chronos_bow' ? 720 : 550, // 他の武器同様にspeedプロパティを設定
       skill: baseDef.skill,
       slot: 'weapon', // 確実に武器スロットに設定
       dur: 999,
@@ -931,6 +951,93 @@ const BEHAVIORS = {
           });
         });
       }
+    }
+  },
+  astral_orb: {
+    // 通常攻撃：軽くホーミングする光の弾を2発同時発射（1ヒットで星力+6）
+    attack: (s, dmg) => {
+      [-0.14, 0.14].forEach(offset => {
+        s.shoot(s.ang + offset, Math.round(dmg * 0.6), 0x10b981, {
+          homing: true,
+          starPerHit: 6
+        });
+      });
+    },
+
+    // Eスキル：アストラル・パルス（自分周囲の衝撃波＋弾消し＋敵1体ごとに星力+15）
+    skill: (s, dmg) => {
+      const radius = 150;
+      s.cameras.main.shake(100, 0.008);
+
+      const wave = s.add.circle(s.p.x, s.p.y, radius, 0x10b981, 0.35).setStrokeStyle(3, 0x6ee7b7).setDepth(3);
+      s.tweens.add({ targets: wave, scale: 1.25, alpha: 0, duration: 260, onComplete: () => wave.destroy() });
+
+      // ボスの弾幕を消去
+      s.shots = s.shots.filter(b => {
+        if (Math.hypot(b.o.x - s.p.x, b.o.y - s.p.y) <= radius) {
+          b.o.destroy();
+          return false;
+        }
+        return true;
+      });
+
+      let hitCount = 0;
+      s.enemies.forEach(e => {
+        if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - s.p.x, e.c.y - s.p.y) <= e.r + radius) {
+          s.damage(e, Math.round(dmg * 1.4));
+          // 外側へノックバック
+          const ang = Math.atan2(e.c.y - s.p.y, e.c.x - s.p.x);
+          const kx = e.c.x + Math.cos(ang) * 70, ky = e.c.y + Math.sin(ang) * 70;
+          if (free(kx, e.c.y, e.r)) e.c.x = kx;
+          if (free(e.c.x, ky, e.r)) e.c.y = ky;
+          hitCount++;
+        }
+      });
+
+      if (hitCount > 0) {
+        const add = hitCount * 15;
+        s.starGauge = Math.min(100, (s.starGauge || 0) + add);
+        s.floatText(s.p.x, s.p.y - 35, `星力 +${add}`, '#34d399', '14px', 700);
+      }
+    }
+  },
+
+  chronos_bow: {
+    // 通常攻撃：貫通する次元の矢（距離が離れているほど最大1.6倍＋刻限ゲージ上昇）
+    attack: (s, dmg) => {
+      s.shoot(s.ang, dmg, 0x3b82f6, {
+        pierce: true,
+        startX: s.p.x,
+        startY: s.p.y,
+        isChronosArrow: true
+      });
+    },
+
+    // Eスキル：バックステップ・アロー（無敵後方ステップ＋前方5方向扇状射撃）
+    skill: (s, dmg) => {
+      const backAng = s.ang + Math.PI;
+      const stepDist = 110;
+      s.inv = s.time.now + 450;
+
+      // 残像付きバックステップ
+      for (let i = 1; i <= 5; i++) {
+        const nx = s.p.x + Math.cos(backAng) * (stepDist / 5);
+        const ny = s.p.y + Math.sin(backAng) * (stepDist / 5);
+        if (free(nx, s.p.y, 11)) s.p.x = nx;
+        if (free(s.p.x, ny, 11)) s.p.y = ny;
+        const gh = s.add.circle(s.p.x, s.p.y, 11, 0x60a5fa, 0.5).setDepth(2);
+        s.tweens.add({ targets: gh, alpha: 0, duration: 250, onComplete: () => gh.destroy() });
+      }
+
+      // 前方5本の矢を一斉発射
+      [-0.32, -0.16, 0, 0.16, 0.32].forEach(offset => {
+        s.shoot(s.ang + offset, Math.round(dmg * 0.9), 0x93c5fd, {
+          startX: s.p.x,
+          startY: s.p.y,
+          isChronosArrow: true
+        });
+      });
+      s.floatText(s.p.x, s.p.y - 30, '⏳ バックステップ・アロー！', '#60a5fa', '15px', 800);
     }
   }
 };
@@ -1472,7 +1579,7 @@ const BOSS_WEAKNESS_MODES = [
 const getAttackCategory = (scene, isProjectile = false) => {
   if (scene.isCastingSkill || scene.isCastingSubOrExs) return 'skill';
   if (isProjectile) return 'ranged';
-  const rangedTypes = ['bow', 'eruption_wand', 'lightning_staff'];
+  const rangedTypes = ['bow', 'eruption_wand', 'lightning_staff', 'astral_orb', 'chronos_bow'];
   if (weapon && rangedTypes.includes(weapon.type)) return 'ranged';
   return 'melee';
 };
@@ -1555,9 +1662,6 @@ class Main extends Phaser.Scene {
     this.bars = this.add.graphics().setDepth(5);
     this.setupPlayer();
     if (this.notice) this.popup(this.notice, '#ff9a8a');
-
-    /*this.setupPlayer();
-    if (this.notice) this.popup(this.notice, '#ff9a8a');*/
 
     // ★ 初回起動またはアプデ後初回ならアプデ画面を開く
     if (checkNewVersion()) {
@@ -1788,8 +1892,7 @@ class Main extends Phaser.Scene {
     }
     this.inv = this.time.now + 800;
     const savedHp = PLAYER.currentHp;
-    this.hp = this.carryHp != null ? this.carryHp : (savedHp != null ? savedHp : maxHp());
-    this.inv = this.time.now + 800;
+    this.hp = this.carryHp != null ? this.carryHp : (savedHp != null ? savedHp : maxHp()),
     this.dodge = null; this.dodgeUntil = 0; this.nextDodge = 0; this.leaving = false;
     this.cameras.main.fadeIn(300);
     this.fx = this.add.graphics();
@@ -2013,7 +2116,7 @@ class Main extends Phaser.Scene {
           });
           const tx = target.c.x - e.c.x, ty = target.c.y - e.c.y, td = Math.hypot(tx, ty);
           if (td > 1) {
-            const v = e.speed * (dt / 1000) / td;
+            const v = e.speed * slowMult * (dt / 1000) / d;
             const nx = e.c.x + tx * v, ny = e.c.y + ty * v;
             if (free(nx, e.c.y, e.r)) e.c.x = nx;
             if (free(e.c.x, ny, e.r)) e.c.y = ny;
@@ -2045,6 +2148,7 @@ class Main extends Phaser.Scene {
       const busy = e.boss && this.bossAi(e, now, dt, ex, ey, d);
 
       if (!busy && d < e.aggro && d > 1) {
+        const slowMult = (e.chronosSlowUntil && now < e.chronosSlowUntil) ? 0.3 : 1.0;
         const v = e.speed * (dt / 1000) / d;
         const nx = e.c.x + ex * v, ny = e.c.y + ey * v;
         if (free(nx, e.c.y, e.r)) e.c.x = nx;
@@ -2258,6 +2362,105 @@ class Main extends Phaser.Scene {
       }
       return;
     }
+    // ★ アストラル・オーブ Qスキル：ビット・サモン（要ゲージ50 / 攻撃命中ごとにゲージ5消費）
+    if (weapon && weapon.type === 'astral_orb') {
+      if ((this.starGauge || 0) < 50) {
+        return this.popup('星力ゲージ不足 (50必要)', '#a0a7b8');
+      }
+      this.starGauge -= 50;
+      this.popup('🛰️ ビット・サモン展開！', '#34d399', 1);
+
+      // 既存のビットがあれば破棄
+      if (this.astralBitsTimer) this.astralBitsTimer.destroy();
+      if (this.astralBitsGfx) this.astralBitsGfx.forEach(b => b.destroy());
+
+      const bit1 = this.add.circle(this.p.x, this.p.y, 7, 0x10b981).setStrokeStyle(2, 0xffffff).setDepth(4);
+      const bit2 = this.add.circle(this.p.x, this.p.y, 7, 0x10b981).setStrokeStyle(2, 0xffffff).setDepth(4);
+      this.astralBitsGfx = [bit1, bit2];
+
+      let elapsed = 0;
+      let nextShotAt = 0;
+
+      this.astralBitsTimer = this.time.addEvent({
+        delay: 50,
+        loop: true,
+        callback: () => {
+          elapsed += 50;
+          // 武器を持ち替えた、6秒経過、または星力ゲージが尽きたら終了
+          if (!weapon || weapon.type !== 'astral_orb' || elapsed >= 6000 || (this.starGauge || 0) <= 0) {
+            this.astralBitsGfx.forEach(b => b.destroy());
+            this.astralBitsGfx = null;
+            this.astralBitsTimer.destroy();
+            return;
+          }
+
+          // プレイヤー周囲を公転
+          const baseAng = elapsed * 0.005;
+          this.astralBitsGfx.forEach((b, idx) => {
+            const a = baseAng + idx * Math.PI;
+            b.x = this.p.x + Math.cos(a) * 36;
+            b.y = this.p.y + Math.sin(a) * 36;
+          });
+
+          // 0.8秒ごとに自動追尾レーザー発射
+          if (elapsed >= nextShotAt) {
+            nextShotAt = elapsed + 800;
+            const target = this.enemies.find(e => e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - this.p.x, e.c.y - this.p.y) <= 380);
+            if (target) {
+              const dmg = Math.round(atkTotal(this) * 0.45);
+              this.astralBitsGfx.forEach(b => {
+                if ((this.starGauge || 0) <= 0) return;
+                const beam = this.add.line(0, 0, b.x, b.y, target.c.x, target.c.y, 0x34d399).setOrigin(0, 0).setLineWidth(3).setDepth(3);
+                this.tweens.add({ targets: beam, alpha: 0, duration: 140, onComplete: () => beam.destroy() });
+
+                this.damage(target, dmg);
+                // ★ ビットの攻撃が当たるたびに星力ゲージを5消費（溜まらない）
+                this.starGauge = Math.max(0, (this.starGauge || 0) - 5);
+              });
+            }
+          }
+        }
+      });
+      return;
+    }
+
+    // ★ クロノス・ボウ Qスキル：クロノ・オーラ（自分追従の時空結界・4秒間連射UP＆周囲減速）
+    if (weapon && weapon.type === 'chronos_bow') {
+      if ((this.chronosGauge || 0) < 50) {
+        return this.popup('刻限ゲージ不足 (50必要)', '#a0a7b8');
+      }
+      this.chronosGauge -= 50;
+      this.popup('⏳ クロノ・オーラ展開！', '#60a5fa', 1);
+
+      const radius = 160;
+      const aura = this.add.circle(this.p.x, this.p.y, radius, 0x3b82f6, 0.16).setStrokeStyle(3, 0x93c5fd).setDepth(1);
+      let elapsed = 0;
+
+      const timer = this.time.addEvent({
+        delay: 50,
+        repeat: 79, // 4秒間
+        callback: () => {
+          elapsed += 50;
+          aura.x = this.p.x;
+          aura.y = this.p.y;
+          // 自己連射速度UP（次の攻撃までの待ち時間を短縮）
+          if (this.nextAtk > this.time.now + 240) {
+            this.nextAtk = this.time.now + 240;
+          }
+          // 結界内の敵を超スロー＆持続ダメージ
+          this.enemies.forEach(e => {
+            if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - this.p.x, e.c.y - this.p.y) <= e.r + radius) {
+              e.chronosSlowUntil = this.time.now + 200;
+              if (elapsed % 500 === 0) {
+                this.damage(e, Math.round(atkTotal(this) * 0.5));
+              }
+            }
+          });
+          if (elapsed >= 4000) aura.destroy();
+        }
+      });
+      return;
+    }
     const n = this.time.now;
     this.nextSubSkill = this.nextSubSkill || 0;
     if (n < this.nextSubSkill || this.dodge || this.leaving) return;
@@ -2424,6 +2627,16 @@ class Main extends Phaser.Scene {
 
   giveArmor(slot, row = 0) {
     const it = rollArmor(slot, this.floor);
+    if (SAVE.cleared >= 200 && SAVE.autoSell) {
+      const currentEq = EQUIPPED[slot];
+      // すでにその部位を装備しており、拾った防具のスコアが装備中以下の場合は自動売却
+      if (currentEq && armorScore(it) <= armorScore(currentEq)) {
+        const price = sellPrice(it);
+        PLAYER.gold += price;
+        this.popup(`自動分解:${it.label} → +${price}G`, '#ffd36a', row);
+        return;
+      }
+    }
     if (!addToPack(it)) { this.popup('バッグが満杯です', '#a0a7b8', row); return; }
     this.popup(`入手:${armorLabel(it)}`, '#7cf0a0', row);
   }
@@ -2619,7 +2832,7 @@ class Main extends Phaser.Scene {
           }
         } else {
           // 弱点不一致：ダメージ軽減（0.75倍）
-          dmg = Math.round(dmg * 0.75);
+          dmg = Math.round(dmg * 0.40);
           this.floatText(e.c.x, e.c.y - 36, `RESIST (${currentWeakness.label})`, '#a0a7b8', '11px', 400);
         }
       }
@@ -2712,7 +2925,7 @@ class Main extends Phaser.Scene {
     if (Math.random() < ARTIFACT.dropRate) this.giveArtifact(2);
   }
 
-  shoot(a, dmg, color = 0xe9d8a6) {
+  shoot(a, dmg, color = 0xe9d8a6, opts = {}) {
     const p = this.p;
     
     // ★ 1. 手元で弾けるマズルフラッシュ
@@ -2727,7 +2940,9 @@ class Main extends Phaser.Scene {
       left: weapon.range, 
       dmg,
       color,
-      lastTrail: 0 // トレイル生成間隔用
+      lastTrail: 0, // トレイル生成間隔用
+      hitSet: new Set(),
+      ...opts
     });
   }
 
@@ -2736,6 +2951,20 @@ class Main extends Phaser.Scene {
     const now = this.time.now;
 
     this.arrows = this.arrows.filter(r => {
+      // ★ 追加①：ホーミング追尾処理（アストラル・オーブ用）
+      if (r.homing) {
+        const target = this.enemies.find(e => e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - r.o.x, e.c.y - r.o.y) < 260);
+        if (target) {
+          const curAng = Math.atan2(r.vy, r.vx);
+          const tarAng = Math.atan2(target.c.y - r.o.y, target.c.x - r.o.x);
+          const newAng = curAng + angDiff(tarAng, curAng) * 0.14;
+          const spd = Math.hypot(r.vx, r.vy);
+          r.vx = Math.cos(newAng) * spd;
+          r.vy = Math.sin(newAng) * spd;
+          r.o.setRotation(newAng);
+        }
+      }
+
       const dx = r.vx * s, dy = r.vy * s;
       r.o.x += dx; r.o.y += dy; r.left -= Math.hypot(dx, dy);
 
@@ -2754,19 +2983,51 @@ class Main extends Phaser.Scene {
         // 雷系武器の弾ならビリビリのスパークを軌道に散らす
         if (r.color === 0xffff00) {
           const spark = this.add.line(
-            0, 0, 
-            r.o.x, r.o.y, 
-            r.o.x + (Math.random() - 0.5) * 16, r.o.y + (Math.random() - 0.5) * 16, 
+            0, 0,
+            r.o.x, r.o.y,
+            r.o.x + (Math.random() - 0.5) * 16, r.o.y + (Math.random() - 0.5) * 16,
             0xffff00
           ).setLineWidth(2).setDepth(2);
           this.tweens.add({ targets: spark, alpha: 0, duration: 80, onComplete: () => spark.destroy() });
         }
       }
 
-      const hit = this.enemies.find(e => e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - r.o.x, e.c.y - r.o.y) < e.r + 4);
-      if (hit) this.damage(hit, r.dmg, true);
+      // ★ 変更②：貫通弾で同じ敵に連続ヒットしないよう !r.hitSet.has(e) を追加
+      const hit = this.enemies.find(e => e.hp > 0 && !e.isAllyMinion && !(r.hitSet && r.hitSet.has(e)) && Math.hypot(e.c.x - r.o.x, e.c.y - r.o.y) < e.r + 4);
       
-      const gone = hit || r.left <= 0 || solid(r.o.x, r.o.y);
+      if (hit) {
+        if (r.hitSet) r.hitSet.add(hit);
+        let finalDmg = r.dmg;
+
+        // ★ 追加③：クロノス・ボウの距離補正＆刻限ゲージ回収
+        if (r.isChronosArrow) {
+          const dist = Math.hypot(hit.c.x - (r.startX || this.p.x), hit.c.y - (r.startY || this.p.y));
+          const ratio = Math.min(1, dist / 450);
+          finalDmg = Math.round(r.dmg * (1.0 + 0.6 * ratio)); // 遠いほど最大1.6倍
+          const gaugeAdd = Math.round(8 + 8 * ratio); // +8 〜 +16
+          this.chronosGauge = Math.min(100, (this.chronosGauge || 0) + gaugeAdd);
+          if (ratio >= 0.6) {
+            this.floatText(hit.c.x, hit.c.y - 36, `狙撃 x${(1 + 0.6 * ratio).toFixed(1)}`, '#60a5fa', '12px', 450);
+          }
+        }
+
+        // ★ 追加④：アストラル・オーブの星力ゲージ回収
+        if (r.starPerHit) {
+          this.starGauge = Math.min(100, (this.starGauge || 0) + r.starPerHit);
+        }
+
+        // 元の第3引数（true）もそのまま維持してダメージ実行
+        this.damage(hit, finalDmg, true);
+
+        // ★ 追加⑤：クロノスZスキル（時間停止）中に当てた矢を記録
+        if (this.timeStopUntil && now < this.timeStopUntil) {
+          hit.timeStopHits = (hit.timeStopHits || 0) + 1;
+          hit.timeStopBaseAtk = atkTotal(this);
+        }
+      }
+
+      // ★ 変更⑥：貫通弾(r.pierce)の場合は敵に当たっても消えないようにする
+      const gone = (!r.pierce && hit) || r.left <= 0 || solid(r.o.x, r.o.y);
       if (gone) r.o.destroy();
       return !gone;
     });
@@ -2942,10 +3203,13 @@ class Main extends Phaser.Scene {
       this.isCastingSubOrExs = true;
       this.time.delayedCall(1200, () => { this.isCastingSubOrExs = false; });
       const atk = atkTotal(this);
-      const dmg = Math.round(atk * 35.0); // 3500%の超絶終末ダメージ
+      const dmg = Math.round(atk * 35.0);
+      const radius = 280; // ★ 効果範囲を自分中心の半径280pxに制限
 
-      // 画面暗転＆巨大崩壊フラッシュ
-      const darkBg = this.add.rectangle(this.p.x, this.p.y, this.scale.width * 2, this.scale.height * 2, 0x110018, 0.75).setDepth(4);
+      // 効果範囲がわかる終末リングエフェクト
+      const areaRing = this.add.circle(this.p.x, this.p.y, radius, 0xff1144, 0.28).setStrokeStyle(4, 0xff3366).setDepth(4);
+      this.tweens.add({ targets: areaRing, scale: 1.08, alpha: 0, duration: 500, onComplete: () => areaRing.destroy() });
+
       this.cameras.main.shake(600, 0.03);
       this.popup('☄️ 終焉奥義【アポカリプス・ノヴァ】！', '#ff1144', 1);
 
@@ -2954,19 +3218,111 @@ class Main extends Phaser.Scene {
       this.hp = Math.min(maxHp(), this.hp + healAmt);
       this.floatText(this.p.x, this.p.y - 45, `+${healAmt} HP`, '#7cf0a0', '18px', 1200);
 
+      const cx = this.p.x, cy = this.p.y;
       this.time.delayedCall(250, () => {
-        darkBg.destroy();
         this.cameras.main.flash(350, 255, 30, 80);
 
         this.enemies.forEach(e => {
-          if (e.hp > 0 && !e.isAllyMinion) {
-            // ★ ボスの魔力バリアを強制破壊！
+          // ★ 範囲内（radius + e.r）の敵だけに命中させる
+          if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - cx, e.c.y - cy) <= radius + e.r) {
             if (e.boss && e.isShielded) {
               e.isShielded = false;
               this.floatText(e.c.x, e.c.y - 40, '💥 終末の力でバリア粉砕！', '#ff3366', '18px', 1200);
             }
             this.damage(e, dmg);
-            e.stunUntil = this.time.now + 4000; // 4秒間完全行動不能
+            e.stunUntil = this.time.now + 4000;
+          }
+        });
+      });
+      return;
+    }
+    // ★ アストラル・オーブ Zスキル：アストラル・カノン（超極太星屑ビーム一撃・2800%）
+    if (weapon && weapon.type === 'astral_orb') {
+      if ((this.starGauge || 0) < 100) {
+        return this.popup('星力ゲージ不足 (100必要)', '#a0a7b8');
+      }
+      this.starGauge = 0;
+      const dmg = Math.round(atkTotal(this) * 28.0); // 2800%の単発超威力
+      const ang = this.ang;
+      const len = 850, halfW = 48;
+      const x1 = this.p.x, y1 = this.p.y;
+      const x2 = x1 + Math.cos(ang) * len, y2 = y1 + Math.sin(ang) * len;
+
+      this.cameras.main.shake(450, 0.025);
+      this.popup('🌟 極光奥義【アストラル・カノン】！', '#34d399', 1);
+
+      // 外枠ビーム＋中心白コアビーム
+      const outerBeam = this.add.line(0, 0, x1, y1, x2, y2, 0x10b981).setOrigin(0, 0).setLineWidth(halfW * 2, halfW * 2).setAlpha(0.85).setDepth(4);
+      const coreBeam = this.add.line(0, 0, x1, y1, x2, y2, 0xffffff).setOrigin(0, 0).setLineWidth(halfW * 0.8, halfW * 0.8).setDepth(5);
+      this.tweens.add({ targets: [outerBeam, coreBeam], alpha: 0, duration: 550, onComplete: () => { outerBeam.destroy(); coreBeam.destroy(); } });
+
+      // 線分上の全敵に命中判定
+      const dx = x2 - x1, dy = y2 - y1, lenSq = dx * dx + dy * dy;
+      this.enemies.forEach(e => {
+        if (e.hp > 0 && !e.isAllyMinion) {
+          const tVal = Math.max(0, Math.min(1, ((e.c.x - x1) * dx + (e.c.y - y1) * dy) / lenSq));
+          const projX = x1 + tVal * dx, projY = y1 + tVal * dy;
+          if (Math.hypot(e.c.x - projX, e.c.y - projY) <= halfW + e.r) {
+            this.damage(e, dmg);
+            e.stunUntil = this.time.now + 2500;
+          }
+        }
+      });
+      return;
+    }
+
+    // ★ クロノス・ボウ Zスキル：エンド・オブ・タイム（4秒間時間完全停止＆解除時一斉炸裂）
+    // ★ クロノス・ボウ Zスキル：エンド・オブ・タイム（周囲340pxの時間停止＆解除時一斉炸裂）
+    if (weapon && weapon.type === 'chronos_bow') {
+      if ((this.chronosGauge || 0) < 100) {
+        return this.popup('刻限ゲージ不足 (100必要)', '#a0a7b8');
+      }
+      this.chronosGauge = 0;
+      const stopDur = 4000;
+      const radius = 340; // ★ 効果範囲を半径340px（画面内サイズ）に制限
+      this.timeStopUntil = this.time.now + stopDur;
+
+      this.cameras.main.shake(300, 0.015);
+      this.popup('⏳ 時空奥義【エンド・オブ・タイム】！', '#60a5fa', 1);
+
+      // 画面全体ではなく、効果範囲の時計盤ドームを表示
+      const timeZone = this.add.circle(this.p.x, this.p.y, radius, 0x1e3a8a, 0.25).setStrokeStyle(3, 0x60a5fa).setDepth(3);
+
+      // 4秒間、ドーム内の敵の行動を完全停止
+      const freezeLoop = this.time.addEvent({
+        delay: 50,
+        repeat: 79,
+        callback: () => {
+          timeZone.x = this.p.x;
+          timeZone.y = this.p.y;
+          this.enemies.forEach(e => {
+            if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - this.p.x, e.c.y - this.p.y) <= radius + e.r) {
+              e.stunUntil = this.time.now + 150;
+            }
+          });
+          // 停止中は自分の攻撃速度2倍
+          if (this.nextAtk > this.time.now + 210) this.nextAtk = this.time.now + 210;
+        }
+      });
+
+      // 4秒後に時間解除＆ドーム内（または矢を撃ち込んだ敵）が一斉炸裂！
+      this.time.delayedCall(stopDur, () => {
+        timeZone.destroy();
+        this.cameras.main.flash(250, 150, 200, 255);
+        this.cameras.main.shake(350, 0.02);
+
+        this.enemies.forEach(e => {
+          if (e.hp > 0 && !e.isAllyMinion) {
+            const hits = e.timeStopHits || 0;
+            const inZone = Math.hypot(e.c.x - this.p.x, e.c.y - this.p.y) <= radius + e.r;
+            // ドーム内にいるか、時間停止中に矢を当てていた敵だけ炸裂
+            if (inZone || hits > 0) {
+              const baseAtk = e.timeStopBaseAtk || atkTotal(this);
+              const burstDmg = Math.round(baseAtk * (18.0 + hits * 3.0));
+              e.timeStopHits = 0;
+              this.damage(e, burstDmg);
+              this.floatText(e.c.x, e.c.y - 40, `💥 時空開放 (${hits}Hit炸裂!)`, '#93c5fd', '16px', 1200);
+            }
           }
         });
       });
@@ -3166,6 +3522,7 @@ class HudScene extends Phaser.Scene {
       this.uiGfx.strokeRect(hpBarX, 48, hpBarWidth, 10);
 
       this.souenText.setVisible(true);
+      this.souenText.setColor('#00ffff');
       this.souenText.setPosition(hpBarX + 55, 47);
       this.souenText.setText(`蒼焔 ${Math.floor(souenVal)} / 120`);
 
@@ -3186,6 +3543,20 @@ class HudScene extends Phaser.Scene {
       this.souenText.setPosition(hpBarX + 55, 47);
       this.souenText.setText(`終末 ${Math.floor(apoVal)} / 100`);
 
+      this.statBonusText.setPosition(72, 66);
+    } else if (currentWeapon && currentWeapon.type === 'astral_orb') {
+      const starVal = Math.min(100, Math.max(0, main.starGauge || 0));
+      this.uiGfx.fillStyle(0x062e24, 1).fillRect(hpBarX, 48, hpBarWidth, 10);
+      this.uiGfx.fillStyle(0x10b981, 1).fillRect(hpBarX, 48, hpBarWidth * (starVal / 100), 10);
+      this.uiGfx.lineStyle(1, 0x34d399, 0.8).strokeRect(hpBarX, 48, hpBarWidth, 10);
+      this.souenText.setVisible(true).setColor('#6ee7b7').setPosition(hpBarX + 55, 47).setText(`星力 ${Math.floor(starVal)} / 100`);
+      this.statBonusText.setPosition(72, 66);
+    } else if (currentWeapon && currentWeapon.type === 'chronos_bow') {
+      const chVal = Math.min(100, Math.max(0, main.chronosGauge || 0));
+      this.uiGfx.fillStyle(0x0f172a, 1).fillRect(hpBarX, 48, hpBarWidth, 10);
+      this.uiGfx.fillStyle(0x3b82f6, 1).fillRect(hpBarX, 48, hpBarWidth * (chVal / 100), 10);
+      this.uiGfx.lineStyle(1, 0x60a5fa, 0.8).strokeRect(hpBarX, 48, hpBarWidth, 10);
+      this.souenText.setVisible(true).setColor('#93c5fd').setPosition(hpBarX + 55, 47).setText(`刻限 ${Math.floor(chVal)} / 100`);
       this.statBonusText.setPosition(72, 66);
     } else {
       this.souenText.setVisible(false);
@@ -3455,55 +3826,55 @@ class PauseScene extends MenuScene {
     if (this.time.now - this.t0 > 250 && Phaser.Input.Keyboard.JustDown(this.keyTab)) this.close();
   }
 
+  // 【変更】PauseScene クラスの show(mode) 内（1410行目付近）
   show(mode) {
     this.items.forEach(o => o.destroy()); this.items = [];
     const cx = this.scale.width / 2, cleared = SAVE.cleared;
     
-    this.btn(cx, 60, `ポーズ中  攻略済み最高: ${cleared}F  (Tabで再開)`, null, false);
+    this.btn(cx, 55, `ポーズ中  攻略済み最高: ${cleared}F  (Tabで再開)`, null, false);
     
     if (mode === 'top') {
-      // ショートカット：解放済みの最高階層へ直接入る
+      let y = 125;
+      const step = 52; // ボタン同士の縦間隔を統一
+
       if (cleared > 0) {
         const latestFloor = nextFloor(cleared);
-        this.btn(cx, 150, `⚡ 最新の挑戦階へ (${latestFloor}F)`, () => this.go(latestFloor));
+        this.btn(cx, y, `⚡ 最新の挑戦階へ (${latestFloor}F)`, () => this.go(latestFloor));
+        y += step;
       }
-      this.btn(cx, 210, '町へ戻る', () => this.go(0), this.floor !== 0);
-      this.btn(cx, 270, '攻略済みの階層一覧から選ぶ', () => this.show('floors'), cleared > 0);
-      this.btn(cx, 330, '手動セーブ', () => {
-        if (saveGame()) this.btn(cx, 430, 'セーブしました！', null, false);
+
+      this.btn(cx, y, '町へ戻る', () => this.go(0), this.floor !== 0);
+      y += step;
+
+      this.btn(cx, y, '攻略済みの階層一覧から選ぶ', () => this.show('floors'), cleared > 0);
+      y += step;
+
+      // 200F突破特典（未達成時も位置がズレないようロック表示にして高さを固定）
+      const autoLabel = cleared >= 200
+        ? (SAVE.autoSell ? '♻️ 弱防具の自動分解: ON' : '♻️ 弱防具の自動分解: OFF')
+        : '🔒 弱防具の自動分解 (200F突破で解放)';
+      this.btn(cx, y, autoLabel, () => {
+        SAVE.autoSell = !SAVE.autoSell;
+        saveGame();
+        this.show('top');
+      }, cleared >= 200);
+      y += step;
+
+      this.btn(cx, y, '手動セーブ', () => {
+        if (saveGame()) {
+          // 画面下部の空きスペースに重ならないよう表示
+          const msg = this.add.text(cx, 485, '✦ セーブしました！', {
+            fontFamily: 'system-ui, sans-serif', fontSize: '15px', color: '#7cf0a0'
+          }).setOrigin(0.5);
+          this.items.push(msg);
+        }
       });
-      this.btn(cx, 390, 'ゲームに戻る', () => this.close());
+      y += step;
+
+      this.btn(cx, y, 'ゲームに戻る', () => this.close());
       return;
     }
-
-    // --- 階層選択画面（floors）の改善 ---
-    const list = floorList(cleared).reverse(); // ★ 降順（最新の階層を上に）
-    const per = 10; // 1ページに表示する件数を増やす (2列×5行)
-    const pages = Math.ceil(list.length / per);
-
-    // クイックジャンプボタン（10階刻みなどのショートカット）
-    this.btn(cx - 160, 110, '最新階へ', () => this.go(list[0]));
-    if (cleared >= 10) this.btn(cx, 110, '10F', () => this.go(10));
-    if (cleared >= 20) this.btn(cx + 160, 110, '20F', () => this.go(20));
-
-    // 階層ボタンのグリッド配置
-    const currentList = list.slice(this.page * per, this.page * per + per);
-    currentList.forEach((f, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const bx = cx - 110 + col * 220;
-      const by = 170 + row * 48;
-      const label = isSub(f) ? `${f}F (ボス)` : `${f}F`;
-      this.btn(bx, by, label, () => this.go(f));
-    });
-
-    // ページネーション
-    const navY = 440;
-    if (this.page > 0) this.btn(cx - 160, navY, '◀ 前の10件', () => { this.page--; this.show('floors'); });
-    this.btn(cx, navY, `戻る (${this.page + 1}/${pages})`, () => this.show('top'));
-    if (this.page + 1 < pages) this.btn(cx + 160, navY, '次の10件 ▶', () => { this.page++; this.show('floors'); });
   }
-
   go(floor) { saveGame(); const m = this.scene.get('main'); this.close(); m.travel(floor); }
 }
 
@@ -3513,17 +3884,31 @@ const itemColor = it => {
   if (it.slot === 'potion') return it.kind === 'full' ? 0xe53e3e : 0x38a169;
   if (it.slot === 'weapon') {
     if (it.type === 'apocalypse') return 0xff1144;
+    if (it.type === 'astral_orb') return 0x10b981; // エメラルド
+    if (it.type === 'chronos_bow') return 0x3b82f6;
     if (it.isLegend || it.type === 'mubi') return 0x00ffff;
     return it.isBossItem ? 0xd98cff : 0xc9a24a;
   }
   return isArtifact(it) ? 0xb15cff : (TIER_COLORS[it.tier] || 0x8a6a4a);
 };
-
+const ITEM_SHORT_CODE = {
+  apocalypse: 'Ap',
+  astral_orb: 'As',
+  chronos_bow: 'Ch',
+  spellbook: 'Sp'
+};
 const itemChar = it => {
   if (!it) return ''; // 空の場合は文字なし
   if (it.slot === 'potion') return '薬';
   if (it.slot === 'weapon' || isArtifact(it)) {
+    if (it.type && ITEM_SHORT_CODE[it.type]) {
+      return ITEM_SHORT_CODE[it.type];
+    }
     return it.name ? it.name[0] : '?';
+    if (/^[\u4e00-\u9faf]/.test(name)) {
+      return name[0];
+    }
+    return name.slice(0, 2);
   }
   if (it.slot === 'sub_weapon') return '副'; // サブ武器アイコン
   return (ARMOR_TYPES[it.slot] && ARMOR_TYPES[it.slot].slot) || '?';
@@ -3597,6 +3982,8 @@ const makeIcon = (scene, it, x, y) => {
 
   const isPot = it.slot === 'potion';
   const subText = isPot ? `x${it.stack || 1}` : (isArtifact(it) ? '' : String(dur));
+  const charStr = itemChar(it);
+  const charFontSize = charStr.length >= 2 ? '18px' : '24px';
 
   return scene.add.container(x, y, [
     scene.add.rectangle(0, 0, 56, 56, itemColor(it)),
@@ -4176,7 +4563,7 @@ class ExsGachaScene extends MenuScene {
     }).setOrigin(0.5);
 
     this.headText = this.add.text(w / 2, 85, '', { ...st, color: '#ffd36a' }).setOrigin(0.5);
-    this.infoText = this.add.text(w / 2, 160, '1回 1000G でExS（大技）を獲得・レベルアップ！', st).setOrigin(0.5);
+    this.infoText = this.add.text(w / 2, 160, '1回 5000G でExS（大技）を獲得・レベルアップ！', st).setOrigin(0.5);
     
     // ガチャ結果表示テキスト
     this.resultText = this.add.text(w / 2, 230, '', { 
@@ -4215,33 +4602,29 @@ class ExsGachaScene extends MenuScene {
     }
 
     this.noteText.setText('');
-    //アポカリプスの設定
-    if (Math.random() < 0.005) {
-      const success = getApocalypse();
-      if (success) {
-        this.resultText.setText('✦✦✦ 終焉降臨！ [Legend] アポカリプス ✦✦✦').setColor('#ff3366');
-        this.descText.setText('【メイン武器】バッグに「アポカリプス」を獲得しました！（Iキーで確認）');
-        this.noteText.setText('');
-      } else {
-        PLAYER.gold += cost;
-        this.resultText.setText('✦ [Legend] アポカリプス が当選しました！').setColor('#ff4444');
-        this.descText.setText('ですがバッグが満杯のため入手できませんでした（5000Gは返金されました）。');
-        this.noteText.setText('バッグに空きを作ってから再度お試しください。');
-      }
-      this.render();
-      return;
-    }
-    // ★ 1. 伝説「武器」としての無尾の抽選 (0.5%)
-    if (Math.random() < 0.01) {
-      const success = getMubi();
+
+    // ★ Legend武器の均等抽選（例：合計 0.03 = 3% で当選し、4種が完全に同じ確率で出る）
+    const legendTotalRate = 0.03; // ← ここを変えるだけで全体の排出率を調整できます（例: 0.04なら各1%、0.10なら各2.5%）
+
+    if (Math.random() < legendTotalRate) {
+      const legendPool = [
+        { type: 'chronos_bow', label: '✦✦✦ 時空降臨！ [Legend] クロノス・ボウ ✦✦✦', color: '#60a5fa' },
+        { type: 'apocalypse',  label: '✦✦✦ 終焉降臨！ [Legend] アポカリプス ✦✦✦', color: '#ff3366' },
+        { type: 'astral_orb',  label: '✦✦✦ 超激レア排出！ [Legend] アストラル・オーブ ✦✦✦', color: '#34d399' },
+        { type: 'mubi',        label: '✦✦✦ 超激レア排出！ [Legend] 無尾 ✦✦✦', color: '#00ffff' }
+      ];
+
+      // 4種類の中から完全に均等（25%ずつ）に1つ抽選
+      const legendPick = legendPool[Math.floor(Math.random() * legendPool.length)];
+      const success = getLegendWeapon(legendPick.type);
 
       if (success) {
-        this.resultText.setText('✦✦✦ 超激レア排出！ [Legend] 無尾 ✦✦✦').setColor('#00ffff');
-        this.descText.setText('【メイン武器】バッグに「無尾」を獲得しました！（Iキーで確認）');
+        this.resultText.setText(legendPick.label).setColor(legendPick.color);
+        this.descText.setText(`【メイン武器】バッグに「${WEAPONS[legendPick.type].name}」を獲得しました！（Iキーで確認）`);
         this.noteText.setText('');
       } else {
         PLAYER.gold += cost; // 返金
-        this.resultText.setText('✦ [Legend] 無尾 が当選しました！').setColor('#ff4444');
+        this.resultText.setText(`✦ [Legend] ${WEAPONS[legendPick.type].name} が当選しました！`).setColor('#ff4444');
         this.descText.setText('ですがバッグが満杯のため入手できませんでした（5000Gは返金されました）。');
         this.noteText.setText('バッグに空きを作ってから再度お試しください。');
       }
