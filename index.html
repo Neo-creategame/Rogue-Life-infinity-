@@ -2116,7 +2116,7 @@ class Main extends Phaser.Scene {
           });
           const tx = target.c.x - e.c.x, ty = target.c.y - e.c.y, td = Math.hypot(tx, ty);
           if (td > 1) {
-            const v = e.speed * slowMult * (dt / 1000) / d;
+            const v = e.speed * (dt / 1000) / td;
             const nx = e.c.x + tx * v, ny = e.c.y + ty * v;
             if (free(nx, e.c.y, e.r)) e.c.x = nx;
             if (free(e.c.x, ny, e.r)) e.c.y = ny;
