@@ -80,7 +80,7 @@ const TOWN_SHOPS = [['お店', 6, 5], ['宿屋', 17, 5], ['鍛冶屋', 28, 5], [
 // ---- セーブ＆ロード機能 ----
 const SAVE_KEY = 'alone_rpg_save_data_v1';
 // バージョン管理と更新履歴
-const GAME_VERSION = '2.3.1'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
+const GAME_VERSION = '2.3.2'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
 const VERSION_KEY = 'alone_rpg_seen_version';
 /*'✦ Ver 2..0 アップデート情報 ✦',
   '',
@@ -88,6 +88,11 @@ const VERSION_KEY = 'alone_rpg_seen_version';
   '・',
   '',*/
 const PATCH_NOTES = [
+  '✦ Ver 2.3.2 アップデート情報 ✦',
+  '',
+  '【修正】',
+  '・攻略済みの階層が表示されないのを修正',
+  '',
   '✦ Ver 2.3.1 アップデート情報 ✦',
   '',
   '【修正】',
@@ -3879,6 +3884,27 @@ class PauseScene extends MenuScene {
       this.btn(cx, y, 'ゲームに戻る', () => this.close());
       return;
     }
+    const floors = floorList(cleared).reverse();
+    const perPage = 10;
+    const maxPage = Math.max(0, Math.ceil(floors.length / perPage) - 1);
+    this.page = Phaser.Math.Clamp(this.page, 0, maxPage);
+
+    const slice = floors.slice(this.page * perPage, (this.page + 1) * perPage);
+    slice.forEach((f, idx) => {
+      const col = idx % 2;
+      const row = Math.floor(idx / 2);
+      const bx = cx - 120 + col * 240;
+      const by = 135 + row * 54;
+      this.btn(bx, by, `${f}F`, () => this.go(f));
+    });
+
+    // ページ切り替えボタン
+    if (maxPage > 0) {
+      this.btn(cx - 140, 425, '← 前のページ', () => { this.page--; this.show('floors'); }, this.page > 0);
+      this.btn(cx + 140, 425, '次のページ →', () => { this.page++; this.show('floors'); }, this.page < maxPage);
+    }
+
+    this.btn(cx, 480, '戻る', () => this.show('top'));
   }
   go(floor) { saveGame(); const m = this.scene.get('main'); this.close(); m.travel(floor); }
 }
