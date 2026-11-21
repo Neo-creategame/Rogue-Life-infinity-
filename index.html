@@ -252,7 +252,11 @@ function loadGame() {
     SAVE.autoSell = !!data.autoSell;
     Object.assign(PLAYER, data.player);
     Object.assign(POTIONS, data.potions);
-    weapon = data.weapon;
+    if (data.weapon && WEAPONS[data.weapon.type]) {
+      weapon = { ...WEAPONS[data.weapon.type], ...data.weapon };
+    } else {
+      weapon = rollWeapon('sword');
+    }
     if (Array.isArray(data.artifacts)) {
       data.artifacts.forEach((it, i) => { ARTIFACTS[i] = it; });
     } else if (data.artifactEq) {
@@ -338,6 +342,7 @@ function genTown() {
   return { g: t, rooms: [{ x: 17, y: 16, w: 6, h: 6 }] };
 }
 const solid = (x, y) => {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return true;
   const tx = Math.floor(x / T), ty = Math.floor(y / T);
   return tx < 0 || ty < 0 || tx >= W || ty >= H || g[ty][tx] === 1;
 };
@@ -3463,6 +3468,7 @@ class Main extends Phaser.Scene {
 
   shoot(a, dmg, color = 0xe9d8a6, opts = {}) {
     const p = this.p;
+    const spd = (weapon && weapon.speed) || 550;
     
     // ★ 1. 手元で弾けるマズルフラッシュ
     this.muzzleFlash(p.x, p.y, a, color);
