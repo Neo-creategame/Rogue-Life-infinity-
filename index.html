@@ -393,6 +393,7 @@ const WEAPONS = {
     base: 500,
     cd: 350,
     range: 420,
+    speed: 550,
     speedMult: 1.1,
     isLegend: true,
     skill: { name: 'アストラル・パルス', cd: 4000 }
@@ -3476,8 +3477,8 @@ class Main extends Phaser.Scene {
     const o = this.add.rectangle(p.x, p.y, 14, 4, color).setRotation(a).setDepth(2);
     this.arrows.push({ 
       o, 
-      vx: Math.cos(a) * weapon.speed, 
-      vy: Math.sin(a) * weapon.speed, 
+      vx: Math.cos(a) * spd, 
+      vy: Math.sin(a) * spd, 
       left: weapon.range, 
       dmg,
       color,
