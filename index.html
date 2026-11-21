@@ -76,11 +76,18 @@ const nextFloor = f => f === 0 ? 1 : f + 0.5;
 const floorIdx = f => Math.round(f * 2) - 1;
 const floorList = c => { const out = []; for (let f = 1; f <= c + 1e-9; f += 0.5) out.push(f); return out; };
 const SAVE = { cleared: 0, autoSell: false };
-const TOWN_SHOPS = [['お店', 6, 5], ['宿屋', 17, 5], ['鍛冶屋', 28, 5], ['倉庫', 6, 14], ['ガチャ屋', 12, 14]];
+const TOWN_SHOPS = [
+  { name: 'お店',     x: 4,  y: 3,  w: 6, h: 5, door: 'bottom', fill: 0x2b382b, stroke: 0x7cf0a0 },
+  { name: '宿屋',     x: 16, y: 3,  w: 8, h: 5, door: 'bottom', fill: 0x422a2a, stroke: 0xff9a8a },
+  { name: '鍛冶屋',   x: 30, y: 3,  w: 6, h: 5, door: 'bottom', fill: 0x422e20, stroke: 0xe08a3c },
+  { name: '倉庫',     x: 3,  y: 13, w: 6, h: 6, door: 'right',  fill: 0x263140, stroke: 0x6fb6ff },
+  { name: 'ガチャ屋', x: 3,  y: 21, w: 8, h: 6, door: 'right',  fill: 0x2e2342, stroke: 0xd98cff },
+  { name: '魔導研究所', x: 29, y: 12, w: 7, h: 6, door: 'left', fill: 0x23383b, stroke: 0x4fd1c5 }
+];
 // ---- セーブ＆ロード機能 ----
 const SAVE_KEY = 'alone_rpg_save_data_v1';
 // バージョン管理と更新履歴
-const GAME_VERSION = '2.3.2'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
+const GAME_VERSION = '2.4.0'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
 const VERSION_KEY = 'alone_rpg_seen_version';
 /*'✦ Ver 2..0 アップデート情報 ✦',
   '',
@@ -88,15 +95,14 @@ const VERSION_KEY = 'alone_rpg_seen_version';
   '・',
   '',*/
 const PATCH_NOTES = [
-  '✦ Ver 2.3.2 アップデート情報 ✦',
+  '✦ Ver 2.4.0 アップデート情報 ✦',
   '',
-  '【修正】',
-  '・攻略済みの階層が表示されないのを修正',
-  '',
-  '✦ Ver 2.3.1 アップデート情報 ✦',
-  '',
-  '【修正】',
-  '・ダンジョン内で魔王の魔剣のEスキルを発動した際に発生していたクラッシュを改善',
+  '【新要素】',
+  '・新たにモチーフ遺物が登場。モチーフガチャから入手してLeagend武器をもっと強く使おう！',
+  '・新しい遺物が登場。また遺物たちにシナジーが登場！シナジーを駆使して強くなろう！'
+  '【お知らせ】'
+  '・ゲームエンジンの改良のためアップデートが止まります。新しいゲームの方でもデータは引き継げます。'
+  'アップデートが止まっている間でもゲームはプレイ可能です。'
   '',
   '✦ Ver 2.3.0 アップデート情報 ✦',
   '',
@@ -191,6 +197,7 @@ function saveGame() {
       player: { ...PLAYER },
       potions: { ...POTIONS },
       weapon: weapon,
+      artifacts: [...ARTIFACTS],
       artifactEq: artifactEq,
       equipped: EQUIPPED,
       backpack: BACKPACK,
@@ -211,7 +218,8 @@ const LEGEND_BASE_ATK = {
   mubi: 500,
   astral_orb: 500,
   apocalypse: 750,
-  chronos_bow: 800
+  chronos_bow: 800,
+  inferno_scythe: 300
 };
 const isLegendWeapon = w => !!(w && LEGEND_BASE_ATK[w.type]);
 
@@ -225,7 +233,12 @@ function getLegendWeapon(type) {
   }
   return added;
 }
-    
+
+const STORAGE_MAX = 40; // 倉庫の最大枠数（8行×5列）
+const storageExpandCost = () => {
+  const step = Math.floor((STORAGE.length - 20) / PACK_COLS) + 1;
+  return step * 10000;
+};
 // データを読み込む
 function loadGame() {
   try {
@@ -238,10 +251,17 @@ function loadGame() {
     Object.assign(PLAYER, data.player);
     Object.assign(POTIONS, data.potions);
     weapon = data.weapon;
-    artifactEq = data.artifactEq;
+    if (Array.isArray(data.artifacts)) {
+      data.artifacts.forEach((it, i) => { ARTIFACTS[i] = it; });
+    } else if (data.artifactEq) {
+      ARTIFACTS[0] = data.artifactEq; // 旧データからの引き継ぎ
+    }
+    artifactEq = ARTIFACTS[0];
 
     Object.keys(EQUIPPED).forEach(k => { EQUIPPED[k] = data.equipped[k]; });
     data.backpack.forEach((item, i) => { BACKPACK[i] = item; });
+    STORAGE.length = Math.max(20, data.storage.length);
+    STORAGE.fill(null);
     data.storage.forEach((item, i) => { STORAGE[i] = item; });
 
     if (data.spellbookSlots) {
@@ -254,7 +274,7 @@ function loadGame() {
     const allItems = [weapon, ...BACKPACK, ...STORAGE, ...Object.values(EQUIPPED)];
     allItems.forEach(it => {
       if (isLegendWeapon(it)) {
-        const baseVal = it.type === 'apocalypse' ? 750 : 500;
+        const baseVal = LEGEND_BASE_ATK[it.type] || 500;
         const baseScaled = Math.round(baseVal * weaponFloorMult(targetFloor));
         // すでに鍛冶屋で強化(+lv)していた分も維持して計算
         const lvMult = Math.pow(1 + SMITH.upStep, it.lv || 0);
@@ -291,9 +311,29 @@ function checkNewVersion() {
 // loadGame();
 
 function genTown() {
-  const t = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => (x === 0 || y === 0 || x === W - 1 || y === H - 1 ? 1 : 0)));
-  TOWN_SHOPS.forEach(([, bx, by]) => { for (let y = by; y < by + 4; y++) for (let x = bx; x < bx + 6; x++) t[y][x] = 1; });
-  return { g: t, rooms: [{ x: 17, y: 19, w: 6, h: 6 }] };
+  // 外周だけ壁(1)、他は床(0)
+  const t = Array.from({ length: H }, (_, y) =>
+    Array.from({ length: W }, (_, x) => (x === 0 || y === 0 || x === W - 1 || y === H - 1 ? 1 : 0))
+  );
+
+  // 各建物の外周を壁(1)にし、入口(door)だけ床(0)にくり抜く
+  TOWN_SHOPS.forEach(b => {
+    for (let y = b.y; y < b.y + b.h; y++) {
+      for (let x = b.x; x < b.x + b.w; x++) {
+        const isEdge = (x === b.x || x === b.x + b.w - 1 || y === b.y || y === b.y + b.h - 1);
+        if (isEdge) t[y][x] = 1;
+      }
+    }
+    const mx = b.x + (b.w >> 1);
+    const my = b.y + (b.h >> 1);
+    if (b.door === 'bottom') { t[b.y + b.h - 1][mx] = 0; t[b.y + b.h - 1][mx - 1] = 0; }
+    if (b.door === 'top')    { t[b.y][mx] = 0;           t[b.y][mx - 1] = 0; }
+    if (b.door === 'right')  { t[my][b.x + b.w - 1] = 0; t[my - 1][b.x + b.w - 1] = 0; }
+    if (b.door === 'left')   { t[my][b.x] = 0;           t[my - 1][b.x] = 0; }
+  });
+
+  // プレイヤーの初期スポーン位置（中央広場）
+  return { g: t, rooms: [{ x: 17, y: 16, w: 6, h: 6 }] };
 }
 const solid = (x, y) => {
   const tx = Math.floor(x / T), ty = Math.floor(y / T);
@@ -361,7 +401,16 @@ const WEAPONS = {
     isLegend: true,
     skill: { name: 'バックステップ・アロー', cd: 4000 }
   },
-
+  inferno_scythe: {
+    name: 'インフェルノ・サイズ',
+    baseAtk: 300,
+    base: 350,
+    cd: 380,
+    range: 115,
+    speedMult: 1.15,
+    isLegend: true,
+    skill: { name: 'ソウル・ハーベスト', cd: 4500 }
+  },
 };
 // 「無尾」または「アポカリプス」かどうかを判定
 const isRestrictedLegend = it => isLegendWeapon(it);
@@ -880,7 +929,8 @@ const BEHAVIORS = {
           });
 
           if (hitAny) {
-            s.souenGauge = Math.min(120, (s.souenGauge || 0) + 3);
+            const addSouen = hasSynergy('awake_mubi') ? 6 : 3;
+            s.souenGauge = Math.min(120, (s.souenGauge || 0) + addSouen);
             s.floatText(s.p.x, s.p.y - 25, '蒼焔 +3', '#00ffff', '11px', 400);
           }
         }
@@ -954,7 +1004,8 @@ const BEHAVIORS = {
             });
 
             if (hitCount > 0) {
-              const add = hitCount * 8;
+              const mult = hasSynergy('awake_apo') ? 1.5 : 1.0;
+              const add = Math.round(hitCount * 8 * mult);
               s.apoGauge = Math.min(100, (s.apoGauge || 0) + add);
               s.floatText(s.p.x, s.p.y - 30, `終末 +${add}`, '#ff3366', '13px', 500);
             }
@@ -966,7 +1017,8 @@ const BEHAVIORS = {
   astral_orb: {
     // 通常攻撃：軽くホーミングする光の弾を2発同時発射（1ヒットで星力+6）
     attack: (s, dmg) => {
-      [-0.14, 0.14].forEach(offset => {
+      const angles = hasSynergy('awake_astral') ? [-0.22, 0, 0.22] : [-0.14, 0.14];
+      angles.forEach(offset => {
         s.shoot(s.ang + offset, Math.round(dmg * 0.6), 0x10b981, {
           homing: true,
           starPerHit: 6
@@ -1049,7 +1101,50 @@ const BEHAVIORS = {
       });
       s.floatText(s.p.x, s.p.y - 30, '⏳ バックステップ・アロー！', '#60a5fa', '15px', 800);
     }
-  }
+  },
+  // ---- BEHAVIORS オブジェクト内に追加 ----
+  inferno_scythe: {
+    // 通常攻撃：3段階コンボ（3段目ヒットで業火+15）
+    attack: (s, dmg) => {
+      s.scytheCombo = ((s.scytheCombo || 0) % 3) + 1;
+      const isThird = s.scytheCombo === 3;
+      const range = isThird ? weapon.range + 20 : weapon.range;
+      const col = isThird ? 0xff4500 : 0xff8c00;
+      const mult = isThird ? 1.2 : 0.85;
+
+      // 炎の斬撃パーティクル
+      for (let i = 0; i < (isThird ? 8 : 4); i++) {
+        const pAng = s.ang + (Math.random() - 0.5) * 1.4;
+        const pDist = 25 + Math.random() * range;
+        const px = s.p.x + Math.cos(pAng) * pDist;
+        const py = s.p.y + Math.sin(pAng) * pDist;
+        const pt = s.add.circle(px, py, isThird ? 4 : 2.5, 0xff5500, 0.9).setDepth(4);
+        s.tweens.add({
+          targets: pt, y: py - 24, alpha: 0, scale: 0.2, duration: 320,
+          onComplete: () => pt.destroy()
+        });
+      }
+
+      if (isThird) {
+        s.cameras.main.shake(70, 0.005);
+        s.floatText(s.p.x, s.p.y - 45, '獄炎重撃！', '#ff6600', '12px', 350);
+      }
+
+      s.strike(s.ang, Math.PI * (isThird ? 0.8 : 0.6), range, Math.round(dmg * mult), col, {
+        infernoPerHit: isThird ? 15 : 0
+      });
+    },
+
+    // Eスキル：ソウル・ハーベスト（広範囲220%ダメージ + 業火+25 + HP15%回復）
+    skill: (s, dmg) => {
+      s.cameras.main.shake(100, 0.008);
+      s.floatText(s.p.x, s.p.y - 30, '🔥 ソウル・ハーベスト！', '#ff5500', '16px', 700);
+
+      s.strike(s.ang, Math.PI * 0.85, weapon.range + 25, Math.round(dmg * 2.2), 0xff3300, {
+        infernoSkillHit: true
+      });
+    }
+  },
 };
 
 // ---- 敵・プレイヤーの設定 ----
@@ -1093,14 +1188,92 @@ const ARTIFACT_LIST = [
   { name: '王家の印章', typeKey: 'bossPct',   typeName: 'ボスダメ',       val: 25, unit: '%',  desc: 'ボスへのダメージ +25%' },
   { name: '竜牙の護符', typeKey: 'regen',     typeName: '持続回復(秒)',   val: 2,  unit: 'HP', desc: '毎秒 HP+2 回復' },
   { name: '深淵の眼',   typeKey: 'crisisAtk', typeName: 'ピンチ時攻撃力', val: 30, unit: '%',  desc: 'HP30%以下で攻撃力 +30%' },
-  { name: '古王の王冠', typeKey: 'hpPct',     typeName: '最大HP',         val: 20, unit: '%',  desc: '最大HP +20%' }
+  { name: '古王の王冠', typeKey: 'hpPct',     typeName: '最大HP',         val: 20, unit: '%',  desc: '最大HP +20%' },
+  { name: '狂戦士の血石', typeKey: 'atkPct',    typeName: '基礎攻撃力',     val: 15, unit: '%',  desc: '攻撃力 +15%' },
+  { name: '時の砂時計',   typeKey: 'cdPct',     typeName: 'スキル短縮',     val: 15, unit: '%',  desc: '武器スキルCD -15%' },
+  { name: '巨神の心臓',     typeKey: 'hpFlat',     typeName: '固定HP',         val: 500, unit: '',   desc: '基礎最大HP +500' },
+  { name: '守護者の盾紋章', typeKey: 'dmgCut',     typeName: '被ダメ軽減',     val: 15,  unit: '%',  desc: '受けるダメージ -15%' },
+  { name: '血塗られた短剣', typeKey: 'bleed',      typeName: '出血蓄積',       val: 1,   unit: '層', desc: '攻撃命中ごとに出血+1層(5層で敵最大HP2.5%爆発)' },
+  // ★ 5. ガラスキャノン（背水）ビルド遺物
+  { name: 'ガラスの聖杯',   typeKey: 'glassCannon',typeName: '背水の呪い',     val: 100, unit: '%',  desc: '最大HPが50%になる代わりに全攻撃ダメージ +100%' },
+
+  // ★ Legendランク：レジェンド武器4種のモチーフ遺物（rarity: 'Legend'）
+  { name: '蒼焔の狐面',     typeKey: 'motif_mubi',   rarity: 'Legend', motifFor: 'mubi',        val: 25, unit: '%', desc: '氷結・スタン敵へダメ+25%【無尾装備時:覚醒】', awakeDesc: '✦覚醒【無尾】蒼焔ゲージ獲得2倍＆氷結・スタン敵へダメ+85%' },
+  { name: '終末の黙示録',   typeKey: 'motif_apo',    rarity: 'Legend', motifFor: 'apocalypse',  val: 25, unit: '%', desc: 'スキル威力+25%【アポカリプス装備時:覚醒】', awakeDesc: '✦覚醒【アポカリプス】終末ゲージ獲得+50%＆スキル・大技ダメ+75%' },
+  { name: '星界の天球儀',   typeKey: 'motif_astral', rarity: 'Legend', motifFor: 'astral_orb',  val: 25, unit: '%', desc: '遠距離弾ダメ+25%【アストラル・オーブ装備時:覚醒】', awakeDesc: '✦覚醒【アストラル】通常攻撃が3WAY化＆Qビットのゲージ消費ゼロ' },
+  { name: 'クロノスの懐中時計', typeKey: 'motif_chronos', rarity: 'Legend', motifFor: 'chronos_bow', val: 25, unit: '%', desc: 'スキルCD-25%【クロノス・ボウ装備時:覚醒】', awakeDesc: '✦覚醒【クロノス・ボウ】刻限ゲージ+50%＆遠距離狙撃倍率が最大2.5倍化' }
+];
+const ARTIFACT_SYNERGIES = [
+  {
+    id: 'immortal_king',
+    name: '【不死の古王】',
+    keys: ['hpPct', 'regen'], // 古王の王冠 + 竜牙の護符
+    desc: '毎秒回復量がさらに+1%最大HP分増加＆被ダメ-10%'
+  },
+  {
+    id: 'abyss_berserker',
+    name: '【背水の狂戦士】',
+    keys: ['crisisAtk', 'atkPct'], // 深淵の眼 + 狂戦士の血石
+    desc: 'ピンチ時攻撃力補正が+60%に倍増＆HP50%以下から発動'
+  },
+  {
+    id: 'god_slayer',
+    name: '【神殺しの覇道】',
+    keys: ['bossPct', 'atkPct'], // 王家の印章 + 狂戦士の血石
+    desc: 'ボスへのダメージがさらに+35%（合計+75%）'
+  },
+  {
+    id: 'chronos_overdrive',
+    name: '【時空超越】',
+    keys: ['cdPct', 'bossPct'], // 時の砂時計 + 王家の印章
+    desc: 'スキルCDがさらに-15%（合計-30%）＆ExSゲージ回収+25%'
+  },
+  { id: 'colossus_heart',    name: '【巨神の生命】',   keys: ['hpFlat', 'hpPct'],      desc: '最大HPさらに+25%＆被弾無敵延長' },
+  { id: 'absolute_aegis',    name: '【絶対防衛線】',   keys: ['dmgCut', 'regen'],      desc: '被ダメさらに-15%＆HP50%以下で回復2倍' },
+  // ★ 新シナジー：出血 ＆ ガラスキャノン
+  { id: 'crimson_harvest',   name: '【紅蓮の血祭り】', keys: ['bleed', 'atkPct'],      desc: '出血爆発が4層で発動＆出血爆発のたびにHP2%回復' },
+  { id: 'glass_god',         name: '【死線の超神】',   keys: ['glassCannon', 'crisisAtk'], desc: 'ガラスの聖杯装備中、常にピンチ状態扱い（攻撃力さらに+50%）' },
+
+  // ★ Legendモチーフ覚醒シナジー（対応するLegend武器を装備している時のみ発動！）
+  {
+    id: 'awake_mubi',
+    name: '✦覚醒【霜月・無尾の極意】',
+    keys: ['motif_mubi'],
+    reqWeapon: 'mubi',
+    desc: '蒼焔ゲージ獲得量2倍＆凍結中の敵に与えるダメージ+60%'
+  },
+  {
+    id: 'awake_apo',
+    name: '✦覚醒【終焉の代行者】',
+    keys: ['motif_apo'],
+    reqWeapon: 'apocalypse',
+    desc: '終末ゲージ獲得量+50%＆メテオ・奥義のダメージ+50%'
+  },
+  {
+    id: 'awake_astral',
+    name: '✦覚醒【星界の支配者】',
+    keys: ['motif_astral'],
+    reqWeapon: 'astral_orb',
+    desc: 'Qスキル【ビット】のゲージ消費がゼロになり、弾数が3発に増加'
+  },
+  {
+    id: 'awake_chronos',
+    name: '✦覚醒【永遠の刻限】',
+    keys: ['motif_chronos'],
+    reqWeapon: 'chronos_bow',
+    desc: '刻限ゲージ獲得量+50%＆距離補正の最大倍率が1.6倍→2.5倍に強化'
+  }
 ];
 
-const ARTIFACT = { dropRate: 0.5 };
+// ★ 解放枠数（初期1枠 / 100F突破で2枠 / 250F突破で3枠）
+const unlockedArtifactSlots = () => SAVE.cleared >= 250 ? 3 : SAVE.cleared >= 100 ? 2 : 1;
+
+const ARTIFACT = { dropRate: 0.2 };
 
 const rollArtifact = () => {
-  const fixed = ARTIFACT_LIST[Math.floor(Math.random() * ARTIFACT_LIST.length)];
-  return { 
+  const normalList = ARTIFACT_LIST.filter(a => a.rarity !== 'Legend');
+  const fixed = normalList[Math.floor(Math.random() * normalList.length)];
+  return {
     slot: 'artifact',
     name: fixed.name,
     typeKey: fixed.typeKey,
@@ -1112,11 +1285,39 @@ const rollArtifact = () => {
     dur: 1, durMax: 1, lv: 0
   };
 };
-
+const rollLegendArtifact = (typeKey) => {
+  const fixed = ARTIFACT_LIST.find(a => a.typeKey === typeKey);
+  if (!fixed) return null;
+  return {
+    slot: 'artifact',
+    rarity: 'Legend',
+    motifFor: fixed.motifFor,
+    name: fixed.name,
+    typeKey: fixed.typeKey,
+    typeName: fixed.typeName,
+    val: fixed.val,
+    unit: fixed.unit,
+    desc: fixed.desc,
+    awakeDesc: fixed.awakeDesc || '',
+    dur: 1, durMax: 1, lv: 0
+  };
+};
+const equippedArtifacts = () => ARTIFACTS.slice(0, unlockedArtifactSlots()).filter(Boolean);
+const activeSynergies = () => {
+  const eqKeys = new Set(equippedArtifacts().map(it => it.typeKey));
+  return ARTIFACT_SYNERGIES.filter(syn => {
+    const hasKeys = syn.keys.every(k => eqKeys.has(k));
+    const hasWep = !syn.reqWeapon || (weapon && weapon.type === syn.reqWeapon);
+    return hasKeys && hasWep;
+  });
+};
+const hasSynergy = id => activeSynergies().some(s => s.id === id);
 const isArtifact = it => !!it && it.slot === 'artifact';
+const ARTIFACTS = [null, null, null];
 let artifactEq = null;
-const artifactStat = key => (artifactEq && artifactEq.typeKey === key) ? artifactEq.val : 0;
-const bossDmgMult = () => 1 + artifactStat('bossPct') / 100;
+// 【差し替え】576行目付近
+const artifactStat = key => equippedArtifacts().reduce((sum, it) => sum + (it.typeKey === key ? it.val : 0), 0);
+const bossDmgMult = () => 1 + (artifactStat('bossPct') + (hasSynergy('god_slayer') ? 35 : 0)) / 100;
 
 const GOLD = { start: 100, perKill: 6, perFloor: 4, bossMult: 10 };
 const goldFor = (floor, boss) => (GOLD.perKill + GOLD.perFloor * floor) * (boss ? GOLD.bossMult : 1);
@@ -1133,16 +1334,22 @@ const HP_PER_PT = 10, ATK_PER_PT = 5, EXP_PER_KILL = 30;
 const expNeed = lv => 50 + 25 * (lv - 1);
 
 const maxHp = () => {
-  const base = PLAYER_HP + PLAYER.hpPts * HP_PER_PT + armorStats().hp;
-  const mult = 1 + artifactStat('hpPct') / 100;
-  return Math.round(base * mult);
+  const base = PLAYER_HP + PLAYER.hpPts * HP_PER_PT + armorStats().hp + artifactStat('hpFlat');
+  const bonusPct = artifactStat('hpPct') + (hasSynergy('colossus_heart') ? 25 : 0);
+  let mult = 1 + bonusPct / 100;
+  if (artifactStat('glassCannon') > 0) mult *= 0.5;
+  return Math.max(1, Math.round(base * mult));
 };
 
 const atkTotal = (scene = null) => {
   const base = Math.round((weapon.atk + PLAYER.atkPts * ATK_PER_PT) * (weapon.dur > 0 ? 1 : DURABILITY.brokenAtkMult));
   let mult = 1 + artifactStat('atkPct') / 100;
-  if (scene && scene.hp <= maxHp() * 0.3 && artifactEq && artifactEq.typeKey === 'crisisAtk') {
-    mult += artifactEq.val / 100;
+  if (artifactStat('glassCannon') > 0) mult += artifactStat('glassCannon') / 100;
+
+  const isCrisis = hasSynergy('glass_god') || (scene && scene.hp <= maxHp() * (hasSynergy('abyss_berserker') ? 0.5 : 0.3));
+  if (isCrisis && artifactStat('crisisAtk') > 0) {
+    const crisisBonus = hasSynergy('abyss_berserker') ? artifactStat('crisisAtk') * 2 : (hasSynergy('glass_god') ? 50 : artifactStat('crisisAtk'));
+    mult += crisisBonus / 100;
   }
   return Math.round(base * mult);
 };
@@ -1268,7 +1475,7 @@ const armorLabel = it => `${it.label}${plus(it)}(HP+${it.hp} 軽減${(it.red * 1
 
 const PACK_COLS = 5, PACK_ROWS = 4;
 // ★ sub_weapon を含めた新しい SLOT_ORDER
-const SLOT_ORDER = ['helmet', 'chest', 'legs', 'shoes', 'weapon', 'sub_weapon', 'artifact', 'exs'];
+const SLOT_ORDER = ['helmet', 'chest', 'legs', 'shoes', 'weapon', 'sub_weapon', 'artifact1', 'artifact2', 'artifact3', 'exs'];
 const BACKPACK = Array(PACK_COLS * PACK_ROWS).fill(null);
 const STORAGE = Array(PACK_COLS * PACK_ROWS).fill(null);
 BACKPACK[0] = rollWeapon('dual'); BACKPACK[1] = rollWeapon('bow'); BACKPACK[2] = rollWeapon('greatsword'); BACKPACK[3] = rollWeapon('spear');
@@ -1298,8 +1505,20 @@ const addToPack = it => {
   BACKPACK[emptyIndex] = it;
   return true;
 };
-const getEq = s => s === 'weapon' ? weapon : s === 'artifact' ? artifactEq : EQUIPPED[s];
-const setEq = (s, it) => { if (s === 'weapon') weapon = it; else if (s === 'artifact') artifactEq = it; else EQUIPPED[s] = it; };
+const getEq = s => {
+  if (s === 'weapon') return weapon;
+  if (s === 'artifact1') return ARTIFACTS[0];
+  if (s === 'artifact2') return ARTIFACTS[1];
+  if (s === 'artifact3') return ARTIFACTS[2];
+  return EQUIPPED[s];
+};
+const setEq = (s, it) => {
+  if (s === 'weapon') weapon = it;
+  else if (s === 'artifact1') { ARTIFACTS[0] = it; artifactEq = it; }
+  else if (s === 'artifact2') ARTIFACTS[1] = it;
+  else if (s === 'artifact3') ARTIFACTS[2] = it;
+  else EQUIPPED[s] = it;
+};
 // ゲーム起動時にセーブデータがあれば自動ロード！
 loadGame();
 
@@ -1681,34 +1900,117 @@ class Main extends Phaser.Scene {
   }
 
   buildTown() {
-    const st = { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#e8eaf0' };
-    TOWN_SHOPS.forEach(([name, bx, by]) => {
-      this.add.rectangle((bx + 3) * T, (by + 2) * T, 6 * T - 2, 4 * T - 2, 0x4a3f35).setStrokeStyle(2, 0x8a7a66);
-      this.add.text((bx + 3) * T, (by + 2) * T, name, st).setOrigin(0.5);
-    });
-    this.stairs = { x: 36 * T + T / 2, y: 22 * T + T / 2 };
-    this.add.circle(this.stairs.x, this.stairs.y, 16, 0x7c5cff).setStrokeStyle(2, 0xffffff);
-    this.add.text(this.stairs.x, this.stairs.y - 30, `${nextFloor(SAVE.cleared)}F 入口`, st).setOrigin(0.5);
-    this.altar = { x: 20 * T + T / 2, y: 14 * T + T / 2 };
-    this.add.rectangle(this.altar.x, this.altar.y, 20, 20, 0x4fd1c5).setAngle(45).setStrokeStyle(2, 0xffffff);
-    this.add.text(this.altar.x, this.altar.y - 28, 'ステータス台', st).setOrigin(0.5);
-    this.smith = { x: 31 * T + T / 2, y: 10 * T + T / 2 };
-    this.grimoireAlt = { x: 26 * T + T / 2, y: 14 * T + T / 2 };
-    this.add.rectangle(this.grimoireAlt.x, this.grimoireAlt.y, 20, 20, 0xb15cff).setStrokeStyle(2, 0xffffff);
-    this.add.text(this.grimoireAlt.x, this.grimoireAlt.y - 28, '魔導台', st).setOrigin(0.5);
-    this.add.rectangle(this.smith.x, this.smith.y, 20, 20, 0xe08a3c).setStrokeStyle(2, 0xffffff);
-    this.add.text(this.smith.x, this.smith.y - 28, '鍛冶台', st).setOrigin(0.5);
-    this.services = [
-      { key: 'shop', tx: 9, ty: 9, label: 'お店' }, { key: 'inn', tx: 20, ty: 9, label: '宿屋' }, { key: 'storage', tx: 9, ty: 18, label: '倉庫' }
-    ].map(s => ({ ...s, x: s.tx * T + T / 2, y: s.ty * T + T / 2 }));
-    this.services.forEach(s => { this.add.rectangle(s.x, s.y, 20, 20, 0xc9a24a).setStrokeStyle(2, 0xffffff); this.add.text(s.x, s.y - 28, s.label, st).setOrigin(0.5); });
-    // Main.buildTown() 内に追加
-    this.gachaAlt = { x: 18 * T + T / 2, y: 14 * T + T / 2 };
-    this.add.rectangle(this.gachaAlt.x, this.gachaAlt.y, 20, 20, 0x00ffff).setStrokeStyle(2, 0xffffff);
-    this.add.text(this.gachaAlt.x, this.gachaAlt.y - 28, 'ガチャ台', st).setOrigin(0.5);
-  }
+  const st = { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#e8eaf0' };
+  const gfx = this.add.graphics();
+
+  // 1. 舗装路（石畳）の描画
+  gfx.fillStyle(0x3a3f4b, 0.85);
+  gfx.fillRect(6 * T, 9 * T, 28 * T, 2 * T);   // 北の道
+  gfx.fillRect(19 * T, 9 * T, 2 * T, 15 * T);  // 中央縦の道
+  gfx.fillRect(10 * T, 15 * T, 19 * T, 2 * T); // 東西の道
+  gfx.fillRect(11 * T, 23 * T, 25 * T, 2 * T); // 南の道
+
+  // 2. 各建物の床・壁・看板（入室時に半透明になるオーバーレイ）の描画
+  this.townBuildings = [];
+  TOWN_SHOPS.forEach(b => {
+    const px = b.x * T, py = b.y * T, pw = b.w * T, ph = b.h * T;
+
+    // 室内の床
+    gfx.fillStyle(b.fill, 1);
+    gfx.fillRect(px + T, py + T, pw - T * 2, ph - T * 2);
+
+    // 建物の外壁タイル
+    gfx.fillStyle(0x4a453e, 1);
+    gfx.lineStyle(2, b.stroke, 0.9);
+    for (let y = b.y; y < b.y + b.h; y++) {
+      for (let x = b.x; x < b.x + b.w; x++) {
+        if (g[y][x] === 1) {
+          gfx.fillRect(x * T + 1, y * T + 1, T - 2, T - 2);
+          gfx.strokeRect(x * T + 1, y * T + 1, T - 2, T - 2);
+        }
+      }
+    }
+
+    // 入口のドアマット
+    const mx = b.x + (b.w >> 1), my = b.y + (b.h >> 1);
+    gfx.fillStyle(b.stroke, 0.35);
+    if (b.door === 'bottom') gfx.fillRect((mx - 1) * T, (b.y + b.h - 1) * T, T * 2, T);
+    if (b.door === 'right')  gfx.fillRect((b.x + b.w - 1) * T, (my - 1) * T, T, T * 2);
+    if (b.door === 'left')   gfx.fillRect(b.x * T, (my - 1) * T, T, T * 2);
+
+    // 屋根看板（入室すると薄くなる）
+    const sign = this.add.text(px + pw / 2, py + 14, b.name, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '13px', fontWeight: 'bold',
+      color: '#ffffff', backgroundColor: 'rgba(14,16,21,0.8)', padding: { x: 6, y: 2 }
+    }).setOrigin(0.5).setDepth(10);
+
+    this.townBuildings.push({ ...b, sign });
+  });
+
+  // ヘルパー：店内のカウンター台を作る関数
+  const putStation = (tx, ty, color, label, isDiamond = false) => {
+    const x = tx * T + T / 2, y = ty * T + T / 2;
+    const obj = this.add.rectangle(x, y, 22, 22, color).setStrokeStyle(2, 0xffffff);
+    if (isDiamond) obj.setAngle(45);
+    this.add.text(x, y - 24, label, { ...st, fontSize: '12px' }).setOrigin(0.5).setDepth(5);
+    return { x, y, label };
+  };
+
+  // 3. 各建物「の中」に機能を設置！
+  // ■ お店の中（x:4..9, y:3..7）
+  // ■ 宿屋の中（x:16..23, y:3..7）
+  this.services = [
+    { key: 'shop',    ...putStation(6.5, 4.5, 0x7cf0a0, '道具屋カウンター') },
+    { key: 'inn',     ...putStation(19.5, 4.5, 0xff9a8a, '宿屋の受付') },
+    { key: 'storage', ...putStation(4.5, 15.5, 0x6fb6ff, '保管庫') }
+  ];
+
+  // ■ 鍛冶屋の中（x:30..35, y:3..7）
+  this.smith = putStation(32.5, 4.5, 0xe08a3c, '鍛冶炉・金床');
+
+  // ■ ガチャ屋の中（x:3..10, y:21..26）に2種類のガチャ台を設置
+  this.gachaAlt      = putStation(5.5, 22.5, 0x00ffff, 'ExSガチャ台');
+  this.motifGachaAlt = putStation(5.5, 24.5, 0xffd36a, '遺物ガチャ台');
+
+  // ■ 魔導研究所の中（x:29..35, y:12..17）にステータス台＆魔導台を設置
+  this.altar       = putStation(32.5, 13.5, 0x4fd1c5, 'ステータス台', true);
+  this.grimoireAlt = putStation(32.5, 15.5, 0xb15cff, '魔導台', true);
+
+  // 4. 屋外エリア（中央広場・南東ポータル・試し斬り場）
+  // 中央広場の更新履歴掲示板
+  this.boardAlt = putStation(20, 14, 0x8a7a66, '更新履歴');
+
+  // 屋外の試し斬りカカシ（南の広場）
+  const dummyX = 24 * T + T / 2, dummyY = 20 * T + T / 2;
+  const dummy = this.spawnEnemy(dummyX, dummyY, 999999999, {
+    r: 15, color: 0xd69e2e, speed: 0, aggro: 0, touchDmg: 0
+  });
+  dummy.isDummy = true;
+  dummy.c.setStrokeStyle(2, 0xffffff);
+  this.add.text(dummyX, dummyY - 34, '試し斬りカカシ', { ...st, fontSize: '12px', color: '#ffd36a' }).setOrigin(0.5);
+  this.dpsText = this.add.text(dummyX, dummyY + 28, 'DPS: 0', { ...st, fontSize: '12px', color: '#7cf0a0' }).setOrigin(0.5);
+  this.dummyHits = [];
+
+  // ダンジョン入口ポータル（南東）
+  this.stairs = { x: 35 * T + T / 2, y: 23 * T + T / 2 };
+  const portalAura = this.add.rectangle(this.stairs.x, this.stairs.y, 34, 34).setStrokeStyle(2, 0xb15cff);
+  this.tweens.add({ targets: portalAura, angle: 360, duration: 6000, repeat: -1 });
+  this.add.circle(this.stairs.x, this.stairs.y, 16, 0x7c5cff).setStrokeStyle(2, 0xffffff);
+  this.add.text(this.stairs.x, this.stairs.y - 32, `${nextFloor(SAVE.cleared)}F 入口`, {
+    ...st, color: '#d98cff', fontWeight: 'bold'
+  }).setOrigin(0.5);
+
+  // 近づいた台の上に浮かぶ [F] アイコン
+  this.interactHint = this.add.text(0, 0, '[F]', {
+    fontFamily: 'system-ui, sans-serif', fontSize: '13px', fontWeight: 'bold',
+    color: '#1d2230', backgroundColor: '#ffd36a', padding: { x: 5, y: 2 }
+  }).setOrigin(0.5).setDepth(20).setVisible(false);
+}
 
   buildDungeon() {
+    this.motifGachaAlt = null;
+    this.gachaAlt = null;
+    this.grimoireAlt = null;
     const ctr = o => ({ x: (o.x + (o.w >> 1)) * T + T / 2, y: (o.y + (o.h >> 1)) * T + T / 2 });
   const s0 = ctr(rooms[0]), dist0 = o => Math.hypot(ctr(o).x - s0.x, ctr(o).y - s0.y);
   this.stairs = ctr(rooms.slice(1).reduce((a, b) => dist0(b) > dist0(a) ? b : a));
@@ -1965,13 +2267,36 @@ class Main extends Phaser.Scene {
     PLAYER.currentHp = this.hp;
     if (Phaser.Input.Keyboard.JustDown(k.pause) && !this.leaving) { saveGame(); this.scene.pause(); this.scene.launch('pause', { floor: this.floor }); return; }
 
-    if (this.floor !== 0 && artifactEq && artifactEq.typeKey === 'regen' && this.hp < maxHp()) {
+    if (this.floor !== 0 && artifactStat('regen') > 0 && this.hp < maxHp()) {
       this.regenTimer = (this.regenTimer || 0) + dt;
       if (this.regenTimer >= 1000) {
         this.regenTimer -= 1000;
-        this.hp = Math.min(maxHp(), this.hp + artifactEq.val);
-        this.floatText(p.x, p.y - 10, `+${artifactEq.val}`, '#7cf0a0', '12px', 500);
+        const synHeal = hasSynergy('immortal_king') ? Math.round(maxHp() * 0.01) : 0;
+        const heal = artifactStat('regen') + synHeal;
+        this.hp = Math.min(maxHp(), this.hp + heal);
+        this.floatText(p.x, p.y - 10, `+${heal}`, '#7cf0a0', '12px', 500);
       }
+    }
+    if (this.floor !== 0 && this.boss && this.boss.hp > 0 && (this.boss.infernoGauge || 0) >= 1) {
+      this.infernoDotTimer = (this.infernoDotTimer || 0) + dt;
+      if (this.infernoDotTimer >= 1000) {
+        this.infernoDotTimer -= 1000;
+        const dotDmg = Math.max(1, Math.round(atkTotal(this) * 0.4 * (this.boss.infernoGauge / 100)));
+        this.boss.hp -= dotDmg;
+        this.floatText(this.boss.c.x, this.boss.c.y - this.boss.r - 18, `🔥${dotDmg}`, '#ff6600', '13px', 600);
+        if (this.boss.hp <= 0) {
+          this.onKill(this.boss);
+          this.enemies = this.enemies.filter(e => e.hp > 0);
+        }
+      }
+      if (this.floor !== 0 && weapon && weapon.type === 'inferno_scythe' && this.hp <= maxHp() * 0.5 && exsGauge < EXS_GAUGE_MAX) {
+      this.infernoExsRegenTimer = (this.infernoExsRegenTimer || 0) + dt;
+      if (this.infernoExsRegenTimer >= 1000) {
+        this.infernoExsRegenTimer -= 1000;
+        const exsRegen = Math.round(4 * (hasSynergy('chronos_overdrive') ? 1.25 : 1.0));
+        exsGauge = Math.min(EXS_GAUGE_MAX, exsGauge + exsRegen);
+      }
+    }
     }
 
     const dx = (k.right.isDown || k.right2.isDown) - (k.left.isDown || k.left2.isDown);
@@ -2009,20 +2334,20 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.atk)) this.attack();
     if (Phaser.Input.Keyboard.JustDown(k.skill)) this.skill();
     
-    /*if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
+    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon1)) this.obtainBossWeapon('demon_sword');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon2)) this.obtainBossWeapon('eruption_wand');
     if (Phaser.Input.Keyboard.JustDown(k.bossWeapon3)) this.obtainBossWeapon('dragon_chain');
-    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');*/
+    if (Phaser.Input.Keyboard.JustDown(k.bossWeapon4)) this.obtainBossWeapon('lightning_staff');
     if (Phaser.Input.Keyboard.JustDown(k.swap)) this.swapWeapon();
     if (Phaser.Input.Keyboard.JustDown(k.stock1)) this.castSpellbookSkill(0);
     if (Phaser.Input.Keyboard.JustDown(k.stock2)) this.castSpellbookSkill(1);
     if (Phaser.Input.Keyboard.JustDown(k.stock3)) this.castSpellbookSkill(2);
     if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
-    /*if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
+    if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
       SAVE.cleared = Math.max(SAVE.cleared, 400);
       saveGame();
       this.travel(60, maxHp(), 'デバッグ: 400Fへワープしました');
-    }*/
+    }
     if (Phaser.Input.Keyboard.JustDown(k.exs)) this.castExS();//exs
 
     if (Phaser.Input.Keyboard.JustDown(k.subSkill)) this.subSkill();
@@ -2034,23 +2359,65 @@ class Main extends Phaser.Scene {
     if (nearStairs && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) {
       if (this.stairsOpen) this.goUp(); else this.popup('階段は閉じている。ボスを倒そう', '#ff9a8a');
     }
-    const nearAltar = this.altar && Math.hypot(p.x - this.altar.x, p.y - this.altar.y) < 28;
+    const nearAltar = this.floor === 0 && this.altar && Math.hypot(p.x - this.altar.x, p.y - this.altar.y) < 28;
     if (nearAltar && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) { this.scene.pause(); this.scene.launch('stats'); }
-    const nearGrimoire = this.grimoireAlt && Math.hypot(p.x - this.grimoireAlt.x, p.y - this.grimoireAlt.y) < 28;
+    const nearGrimoire = this.floor === 0 && this.grimoireAlt && Math.hypot(p.x - this.grimoireAlt.x, p.y - this.grimoireAlt.y) < 28;
     if (nearGrimoire && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) {
       this.scene.pause();
       this.scene.launch('grimoire');
     }
-    const nearSmith = this.smith && Math.hypot(p.x - this.smith.x, p.y - this.smith.y) < 28;
+    const nearSmith = this.floor === 0 && this.smith && Math.hypot(p.x - this.smith.x, p.y - this.smith.y) < 28;
     if (nearSmith && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) { this.scene.pause(); this.scene.launch('blacksmith'); }
-    const near = this.services.find(s => Math.hypot(p.x - s.x, p.y - s.y) < 28);
+    const near = this.floor === 0 && this.services.find(s => Math.hypot(p.x - s.x, p.y - s.y) < 28);
     if (near && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) { this.scene.pause(); this.scene.launch(near.key); }
-    // Main.update() 内に追加
-    const nearGacha = this.gachaAlt && Math.hypot(p.x - this.gachaAlt.x, p.y - this.gachaAlt.y) < 28;
+    const nearGacha = this.floor === 0 && this.gachaAlt && Math.hypot(p.x - this.gachaAlt.x, p.y - this.gachaAlt.y) < 28;
     if (nearGacha && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) {
       this.scene.pause();
       this.scene.launch('exs_gacha');
     }
+    const nearMotifGacha = this.floor === 0 && this.motifGachaAlt && Math.hypot(p.x - this.motifGachaAlt.x, p.y - this.motifGachaAlt.y) < 28;
+    if (nearMotifGacha && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) {
+      this.scene.pause();
+      this.scene.launch('motif_gacha');
+    }
+    const nearBoard = this.floor === 0 && this.boardAlt && Math.hypot(p.x - this.boardAlt.x, p.y - this.boardAlt.y) < 28;
+    if (nearBoard && Phaser.Input.Keyboard.JustDown(k.use) && !this.leaving) {
+      this.scene.pause();
+      this.scene.launch('patch_notes');
+    }
+    if (this.floor === 0) {
+  // 建物の中に入ったら看板を半透明にする
+      if (this.townBuildings) {
+        const ptx = p.x / T, pty = p.y / T;
+        this.townBuildings.forEach(b => {
+        const inside = ptx > b.x && ptx < b.x + b.w && pty > b.y && pty < b.y + b.h;
+        b.sign.setAlpha(inside ? 0.25 : 1.0);
+      });
+    }
+
+// 町でのインタラクト可能施設の頭上に [F] アイコンを表示 & DPS計算
+    if (this.floor === 0 && this.interactHint) {
+      const targets = [
+        this.stairs, this.altar, this.grimoireAlt, this.smith,
+        this.gachaAlt, this.motifGachaAlt, this.boardAlt, ...this.services
+      ].filter(Boolean);
+    const activeTarget = targets.find(obj => Math.hypot(p.x - obj.x, p.y - obj.y) < 28);
+
+    if (activeTarget) {
+      this.interactHint.setPosition(activeTarget.x, activeTarget.y - 46).setVisible(true);
+    } else {
+      this.interactHint.setVisible(false);
+    }
+
+  // 直近3秒間のDPS（秒間ダメージ）を更新
+    if (this.dummyHits && this.dpsText) {
+      this.dummyHits = this.dummyHits.filter(h => now - h.t <= 3000);
+      const totalDmg = this.dummyHits.reduce((sum, h) => sum + h.dmg, 0);
+      const dps = Math.round(totalDmg / 3);
+      this.dpsText.setText(dps > 0 ? `DPS: ${dps.toLocaleString()}` : 'DPS: 0');
+    }
+  }
+}
 
     // ★ 視界制限用グラフィックス（Depth 100 でプレイヤー上・UI背後に描画）
     if (!this.fogGfx) {
@@ -2314,7 +2681,8 @@ class Main extends Phaser.Scene {
   skill() {
     const n = this.time.now;
     if (n < this.nextSkill || this.dodge || this.leaving) return;
-    this.nextSkill = n + weapon.skill.cd;
+    const cdCut = Math.min(0.65, (artifactStat('cdPct') + artifactStat('motif_chronos') + (hasSynergy('chronos_overdrive') ? 15 : 0)) / 100);
+    this.nextSkill = n + Math.round(weapon.skill.cd * (1 - cdCut));
     this.isCastingSkill = true;
     BEHAVIORS[weapon.type].skill(this, atkTotal(this));
     this.useWeapon(DURABILITY.weaponSkill);
@@ -2425,7 +2793,9 @@ class Main extends Phaser.Scene {
 
                 this.damage(target, dmg);
                 // ★ ビットの攻撃が当たるたびに星力ゲージを5消費（溜まらない）
-                this.starGauge = Math.max(0, (this.starGauge || 0) - 5);
+                if (!hasSynergy('awake_astral')) {
+                  this.starGauge = Math.max(0, (this.starGauge || 0) - 5);
+                }
               });
             }
           }
@@ -2471,6 +2841,66 @@ class Main extends Phaser.Scene {
       });
       return;
     }
+    if (weapon && weapon.type === 'inferno_scythe') {
+      const boss = this.boss && this.boss.hp > 0 ? this.boss : null;
+      const gauge = boss ? (boss.infernoGauge || 0) : 0;
+      if (!boss || gauge < 50) {
+        return this.popup('ボスの業火ゲージ不足 (50%以上必要)', '#a0a7b8');
+      }
+
+      const isMax = gauge >= 100;
+      boss.infernoGauge = 0; // ボスの業火を0%にリセット
+      this.isCastingSubOrExs = true;
+      this.time.delayedCall(1200, () => { this.isCastingSubOrExs = false; });
+
+      // 100%時は現在HPの50%を消費（最低HP1残し）し、最終ダメージ1.5倍
+      if (isMax) {
+        const hpCost = Math.floor(this.hp * 0.5);
+        this.hp = Math.max(1, this.hp - hpCost);
+        this.floatText(this.p.x, this.p.y - 50, `💀 生命代償 -${hpCost} HP (威力1.5倍!)`, '#ff2244', '16px', 1000);
+      }
+
+      const baseMult = 6.0 + (gauge * 0.18); // 50%で1500% / 100%で2400%
+      const finalMult = isMax ? baseMult * 1.5 : baseMult; // 100%時は3600%
+      const dmg = Math.round(atkTotal(this) * finalMult);
+
+      const pullRadius = 210;
+      const slamRadius = 115;
+
+      // 1. 周囲（半径210）の雑魚敵をプレイヤーの目の前へ引き寄せる
+      const focusX = this.p.x + Math.cos(this.ang) * 45;
+      const focusY = this.p.y + Math.sin(this.ang) * 45;
+
+      const pullRing = this.add.circle(this.p.x, this.p.y, pullRadius, 0xff5500, 0.15).setStrokeStyle(2, 0xff8800).setDepth(2);
+      this.tweens.add({ targets: pullRing, scale: 0.2, alpha: 0, duration: 180, onComplete: () => pullRing.destroy() });
+
+      this.enemies.forEach(e => {
+        if (e.hp > 0 && !e.isAllyMinion && !e.boss && Math.hypot(e.c.x - this.p.x, e.c.y - this.p.y) <= pullRadius + e.r) {
+          if (free(focusX, focusY, e.r)) {
+            e.c.x = focusX + (Math.random() - 0.5) * 16;
+            e.c.y = focusY + (Math.random() - 0.5) * 16;
+          }
+        }
+      });
+
+      // 2. 引き寄せ直後に大鎌を叩きつけて起爆（ボスは100%、雑魚は40%ダメージ + 2秒スタン）
+      this.time.delayedCall(120, () => {
+        this.cameras.main.shake(isMax ? 350 : 200, isMax ? 0.02 : 0.012);
+        this.popup(isMax ? '🔥 煉獄の断罪【極】！' : '🔥 ヘルファイア・クラッシュ！', '#ff5500', 1);
+
+        const slamFx = this.add.circle(focusX, focusY, slamRadius, isMax ? 0xff1100 : 0xff5500, 0.75).setDepth(4);
+        this.tweens.add({ targets: slamFx, scale: 1.4, alpha: 0, duration: 300, onComplete: () => slamFx.destroy() });
+
+        this.enemies.forEach(e => {
+          if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - focusX, e.c.y - focusY) <= slamRadius + e.r) {
+            const dealDmg = e.boss ? dmg : Math.round(dmg * 0.4);
+            this.damage(e, dealDmg);
+            e.stunUntil = Math.max(e.stunUntil || 0, this.time.now + 2000);
+          }
+        });
+      });
+      return;
+    }
     const n = this.time.now;
     this.nextSubSkill = this.nextSubSkill || 0;
     if (n < this.nextSubSkill || this.dodge || this.leaving) return;
@@ -2494,13 +2924,22 @@ class Main extends Phaser.Scene {
   }
 
   useWeapon(n) {
+    if (this.floor === 0) return;
     if (wear(weapon, n)) this.popup(`${weapon.name}が壊れた!攻撃力が下がる`, '#ff9a8a');
   }
 
   hurtPlayer(raw) {
-    this.hp -= takeDamage(raw);
+    const cutPct = artifactStat('dmgCut') + (hasSynergy('absolute_aegis') ? 15 : 0);
+    const artifactCut = Math.max(0.2, 1 - cutPct / 100);
+    const synCut = hasSynergy('immortal_king') ? 0.9 : 1.0;
+
+    this.hp -= Math.max(1, Math.round(takeDamage(raw) * artifactCut * synCut));
     wearArmor(DURABILITY.armorHit).forEach((it, i) => this.popup(`${it.label}が壊れた!`, '#ff9a8a', i + 1));
     this.hp = Math.min(this.hp, maxHp());
+
+    if (hasSynergy('colossus_heart')) {
+      this.inv = Math.max(this.inv, this.time.now + 900);
+    }
   }
 
   bossAi(e, now, dt, ex, ey, d) {
@@ -2693,6 +3132,7 @@ class Main extends Phaser.Scene {
 
   const p = this.p;
   let hitCountInThisStrike = 0; // ★ 今回の攻撃で当たった敵の数
+  let bossHitCount = 0;         // ★ ボスに当たった数
 
   for (const e of this.enemies) {
     if (e.isAllyMinion) continue;
@@ -2700,7 +3140,8 @@ class Main extends Phaser.Scene {
     if (Math.hypot(dx, dy) > r + e.r) continue;
     if (half < Math.PI && Math.abs(angDiff(Math.atan2(dy, dx), a)) > half) continue;
 
-    hitCountInThisStrike++; // ★ ヒット数をインクリメント
+    hitCountInThisStrike++;
+    if (e.boss) bossHitCount++;
     this.damage(e, dmg);
 
     if (opts.knockback && e.hp > 0) {
@@ -2719,16 +3160,32 @@ class Main extends Phaser.Scene {
   }
 
   if (hitCountInThisStrike > 0 && opts.souenPerHit) {
-    const addAmount = hitCountInThisStrike * opts.souenPerHit;
+    const mult = hasSynergy('awake_mubi') ? 2 : 1;
+    const addAmount = hitCountInThisStrike * opts.souenPerHit * mult;
     this.souenGauge = Math.min(120, (this.souenGauge || 0) + addAmount);
     this.floatText(p.x, p.y - 30, `蒼焔 +${addAmount}`, '#00ffff', '13px', 500);
   }
   if (hitCountInThisStrike > 0 && opts.apoPerHit) {
-    const addAmount = hitCountInThisStrike * opts.apoPerHit;
+    const mult = hasSynergy('awake_apo') ? 1.5 : 1.0;
+    const addAmount = Math.round(hitCountInThisStrike * opts.apoPerHit * mult);
     this.apoGauge = Math.min(100, (this.apoGauge || 0) + addAmount);
     this.floatText(p.x, p.y - 30, `終末 +${addAmount}`, '#ff3366', '13px', 500);
   }
+  if (bossHitCount > 0 && opts.infernoPerHit && this.boss && this.boss.hp > 0) {
+    this.boss.infernoGauge = Math.min(100, (this.boss.infernoGauge || 0) + opts.infernoPerHit);
+    this.floatText(this.boss.c.x, this.boss.c.y - this.boss.r - 25, `🔥業火 +${opts.infernoPerHit}%`, '#ff6600', '13px', 500);
+  }
 
+  if (hitCountInThisStrike > 0 && opts.infernoSkillHit) {
+    const healAmt = Math.max(1, Math.round(maxHp() * 0.15));
+    this.hp = Math.min(maxHp(), this.hp + healAmt);
+    if (bossHitCount > 0 && this.boss && this.boss.hp > 0) {
+      this.boss.infernoGauge = Math.min(100, (this.boss.infernoGauge || 0) + 25);
+      this.floatText(p.x, p.y - 30, `業火 +25% / +${healAmt} HP`, '#7cf0a0', '14px', 700);
+    } else {
+      this.floatText(p.x, p.y - 30, `+${healAmt} HP`, '#7cf0a0', '14px', 700);
+    }
+  }
   // ★ Qスキルのレベルアップ判定
   if (opts.isQSkill && hitCountInThisStrike > 0) {
     qSkillHitCount += hitCountInThisStrike;
@@ -2809,6 +3266,14 @@ class Main extends Phaser.Scene {
     });
 
     const angleFromPlayer = Math.atan2(e.c.y - this.p.y, e.c.x - this.p.x);
+    if (!e.isDummy) {
+      const angleFromPlayer = Math.atan2(e.c.y - this.p.y, e.c.x - this.p.x);
+      const pushDist = e.boss ? 2 : 6;
+      const kx = e.c.x + Math.cos(angleFromPlayer) * pushDist;
+      const ky = e.c.y + Math.sin(angleFromPlayer) * pushDist;
+      if (free(kx, e.c.y, e.r)) e.c.x = kx;
+      if (free(e.c.x, ky, e.r)) e.c.y = ky;
+    }
     const pushDist = e.boss ? 2 : 6;
     const kx = e.c.x + Math.cos(angleFromPlayer) * pushDist;
     const ky = e.c.y + Math.sin(angleFromPlayer) * pushDist;
@@ -2847,8 +3312,66 @@ class Main extends Phaser.Scene {
         }
       }
     }
-
+    if (artifactStat('motif_mubi') > 0 && e.stunUntil && this.time.now < e.stunUntil) {
+      dmg = Math.round(dmg * (hasSynergy('awake_mubi') ? 1.85 : 1.25));
+    }
+    if (artifactStat('motif_apo') > 0 && (this.isCastingSkill || this.isCastingSubOrExs)) {
+      dmg = Math.round(dmg * (hasSynergy('awake_apo') ? 1.75 : 1.25));
+    }
+    if (artifactStat('motif_astral') > 0 && isProjectile) {
+      dmg = Math.round(dmg * 1.25);
+    }
+    if (artifactStat('bleed') > 0 && !e.isAllyMinion && !e.isCrystal) {
+      e.bleedStacks = (e.bleedStacks || 0) + 1;
+      const triggerNeed = hasSynergy('crimson_harvest') ? 4 : 5;
+      if (e.bleedStacks >= triggerNeed) {
+        e.bleedStacks = 0;
+        const bleedDmg = e.boss
+          ? Math.max(dmg, Math.min(Math.round(e.max * 0.025), atkTotal(this) * 12))
+          : Math.round(e.max * 0.15);
+        dmg += bleedDmg;
+        this.floatText(e.c.x, e.c.y - 38, `🩸出血破裂 +${bleedDmg}`, '#ff2255', '15px', 700);
+        if (hasSynergy('crimson_harvest')) {
+          this.hp = Math.min(maxHp(), this.hp + Math.max(1, Math.round(maxHp() * 0.02)));
+        }
+      }
+    }
     if (e.boss) dmg = Math.round(dmg * bossDmgMult());
+    if (artifactStat('motif_mubi') > 0 && e.stunUntil && this.time.now < e.stunUntil) {
+      const mubiMult = hasSynergy('awake_mubi') ? 1.85 : 1.25; // 覚醒時は+85%
+      dmg = Math.round(dmg * mubiMult);
+    }
+    if (artifactStat('motif_apo') > 0 && (this.isCastingSkill || this.isCastingSubOrExs)) {
+      const apoMult = hasSynergy('awake_apo') ? 1.75 : 1.25; // 覚醒時は+75%
+      dmg = Math.round(dmg * apoMult);
+    }
+    if (artifactStat('motif_astral') > 0 && isProjectile) {
+      dmg = Math.round(dmg * 1.25);
+    }
+
+    // 2. 出血スタック（血塗られた短剣）処理
+    if (artifactStat('bleed') > 0 && !e.isAllyMinion && !e.isCrystal) {
+      e.bleedStacks = (e.bleedStacks || 0) + 1;
+      const triggerNeed = hasSynergy('crimson_harvest') ? 4 : 5;
+      if (e.bleedStacks >= triggerNeed) {
+        e.bleedStacks = 0;
+        // ボスの最大HP2.5%（ボスは上限あり、雑魚は最大HPの15%）の割合爆発ダメージ
+        const bleedDmg = e.boss
+          ? Math.max(dmg, Math.min(Math.round(e.max * 0.025), atkTotal(this) * 12))
+          : Math.round(e.max * 0.15);
+        dmg += bleedDmg;
+        this.floatText(e.c.x, e.c.y - 38, `🩸出血破裂 +${bleedDmg}`, '#ff2255', '15px', 700);
+        if (hasSynergy('crimson_harvest')) {
+          this.hp = Math.min(maxHp(), this.hp + Math.max(1, Math.round(maxHp() * 0.02)));
+        }
+      }
+    }
+    if (e.isDummy) {
+      e.hp = e.max; // カカシは倒れない
+      this.dummyHits.push({ t: this.time.now, dmg });
+      this.floatText(e.c.x, e.c.y - 24, String(dmg), '#ffe08a');
+      return;
+    }
     e.hp -= dmg;
     this.floatText(e.c.x, e.c.y - 24, String(dmg), '#ffe08a');
     if (e.hp <= 0) this.onKill(e);
@@ -2909,7 +3432,8 @@ class Main extends Phaser.Scene {
 
     if (e.boss) this.onBossDefeated();
     else if (!e.isAllyMinion && !e.isCrystal && !e.isMinion && Math.random() < DROP_RATE) this.giveArmor(randomSlot());
-    exsGauge = Math.min(EXS_GAUGE_MAX, exsGauge + (e.boss ? 40 : 8));
+    const exsMult = hasSynergy('chronos_overdrive') ? 1.25 : 1.0;
+    exsGauge = Math.min(EXS_GAUGE_MAX, exsGauge + Math.round((e.boss ? 40 : 8) * exsMult));
       
   }
     
@@ -3013,7 +3537,10 @@ class Main extends Phaser.Scene {
         if (r.isChronosArrow) {
           const dist = Math.hypot(hit.c.x - (r.startX || this.p.x), hit.c.y - (r.startY || this.p.y));
           const ratio = Math.min(1, dist / 450);
+          const isAwake = hasSynergy('awake_chronos');
+          const maxBonus = isAwake ? 1.5 : 0.6;
           finalDmg = Math.round(r.dmg * (1.0 + 0.6 * ratio)); // 遠いほど最大1.6倍
+          const gaugeMult = isAwake ? 1.5 : 1.0;
           const gaugeAdd = Math.round(8 + 8 * ratio); // +8 〜 +16
           this.chronosGauge = Math.min(100, (this.chronosGauge || 0) + gaugeAdd);
           if (ratio >= 0.6) {
@@ -3281,7 +3808,6 @@ class Main extends Phaser.Scene {
       return;
     }
 
-    // ★ クロノス・ボウ Zスキル：エンド・オブ・タイム（4秒間時間完全停止＆解除時一斉炸裂）
     // ★ クロノス・ボウ Zスキル：エンド・オブ・タイム（周囲340pxの時間停止＆解除時一斉炸裂）
     if (weapon && weapon.type === 'chronos_bow') {
       if ((this.chronosGauge || 0) < 100) {
@@ -3336,6 +3862,40 @@ class Main extends Phaser.Scene {
           }
         });
       });
+      return;
+    }
+    if (weapon && weapon.type === 'inferno_scythe') {
+      if (exsGauge < EXS_GAUGE_MAX) {
+        return this.popup(`ExSゲージ不足 (${Math.floor(exsGauge)}/100)`, '#a0a7b8');
+      }
+      exsGauge = 0;
+      this.isCastingSubOrExs = true;
+      this.time.delayedCall(1200, () => { this.isCastingSubOrExs = false; });
+
+      const dmg = Math.round(atkTotal(this) * 25.0); // 2500%
+      const radius = 260;
+
+      this.cameras.main.shake(500, 0.025);
+      this.cameras.main.flash(300, 255, 90, 0);
+      this.popup('🌋 終焉の紅蓮・メギドフレイム！', '#ff6600', 1);
+
+      const ring = this.add.circle(this.p.x, this.p.y, radius, 0xff4500, 0.35).setStrokeStyle(4, 0xffaa00).setDepth(4);
+      this.tweens.add({ targets: ring, scale: 1.15, alpha: 0, duration: 500, onComplete: () => ring.destroy() });
+
+      let hitBoss = false;
+      this.enemies.forEach(e => {
+        if (e.hp > 0 && !e.isAllyMinion && Math.hypot(e.c.x - this.p.x, e.c.y - this.p.y) <= radius + e.r) {
+          this.damage(e, dmg);
+          e.stunUntil = Math.max(e.stunUntil || 0, this.time.now + 2500);
+          if (e.boss) hitBoss = true;
+        }
+      });
+
+      if (hitBoss && this.boss && this.boss.hp > 0) {
+        this.boss.infernoGauge = Math.min(100, (this.boss.infernoGauge || 0) + 75);
+        this.floatText(this.p.x, this.p.y - 45, '🔥 ボス業火 +75% 蓄積！', '#ffaa00', '16px', 1000);
+      }
+      saveGame();
       return;
     }
   const n = this.time.now;
@@ -3411,6 +3971,13 @@ class HudScene extends Phaser.Scene {
       fontSize: '11px', 
       color: '#ffffff', 
       fontWeight: 'bold' 
+    }).setOrigin(0.5).setDepth(12);
+
+    this.bossInfernoText = this.add.text(w / 2, 56, '', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
+      color: '#ffaa00',
+      fontWeight: 'bold'
     }).setOrigin(0.5).setDepth(12);
 
     // 左上のテキスト表示（階層・ナビ案内用 / 位置を少し下に調整）
@@ -3568,6 +4135,13 @@ class HudScene extends Phaser.Scene {
       this.uiGfx.lineStyle(1, 0x60a5fa, 0.8).strokeRect(hpBarX, 48, hpBarWidth, 10);
       this.souenText.setVisible(true).setColor('#93c5fd').setPosition(hpBarX + 55, 47).setText(`刻限 ${Math.floor(chVal)} / 100`);
       this.statBonusText.setPosition(72, 66);
+    /*} else if (currentWeapon && currentWeapon.type === 'inferno_scythe') {
+      const infVal = Math.min(100, Math.max(0, main.infernoGauge || 0));
+      this.uiGfx.fillStyle(0x331100, 1).fillRect(hpBarX, 48, hpBarWidth, 10);
+      this.uiGfx.fillStyle(infVal >= 100 ? 0xff2200 : 0xff6600, 1).fillRect(hpBarX, 48, hpBarWidth * (infVal / 100), 10);
+      this.uiGfx.lineStyle(1, 0xffaa00, 0.8).strokeRect(hpBarX, 48, hpBarWidth, 10);
+      this.souenText.setVisible(true).setColor(infVal >= 100 ? '#ff4444' : '#ffaa00').setPosition(hpBarX + 55, 47).setText(`業火 ${Math.floor(infVal)}%`);
+      this.statBonusText.setPosition(72, 66);*/
     } else {
       this.souenText.setVisible(false);
       this.statBonusText.setPosition(72, 52);
@@ -3649,9 +4223,26 @@ class HudScene extends Phaser.Scene {
         this.uiGfx.fillStyle(boss.isBroken ? 0xffd36a : wMode.color, 1);
         this.uiGfx.fillRect(bBarX, bkY, bBarWidth * bkRatio, 6);
       }
+      const infVal = Math.min(100, Math.max(0, main.boss.infernoGauge || 0));
+      if (infVal > 0 || (currentWeapon && currentWeapon.type === 'inferno_scythe')) {
+        const infY = bBarY + bBarHeight + (boss.weaknessIdx != null ? 14 : 6);
+        this.uiGfx.fillStyle(0x2a1200, 0.9).fillRect(bBarX, infY, bBarWidth, 12);
+        this.uiGfx.fillStyle(infVal >= 100 ? 0xff2200 : 0xff6600, 1).fillRect(bBarX, infY, bBarWidth * (infVal / 100), 12);
+        this.uiGfx.lineStyle(1, 0xffaa00, 0.8).strokeRect(bBarX, infY, bBarWidth, 12);
+
+        if (this.bossInfernoText) {
+          this.bossInfernoText.setVisible(true);
+          this.bossInfernoText.setPosition(w / 2, infY + 6);
+          this.bossInfernoText.setColor(infVal >= 100 ? '#ffffff' : '#ffddaa');
+          this.bossInfernoText.setText(`🔥業火 ${Math.floor(infVal)}%${infVal >= 50 ? ' [敵与ダメ-15% / Q起爆可]' : ''}`);
+        }
+      } else if (this.bossInfernoText) {
+        this.bossInfernoText.setVisible(false);
+      }
     } else {
       if (this.bossNameText) this.bossNameText.setText('');
       if (this.bossHpText) this.bossHpText.setText('');
+      if (this.bossInfernoText) this.bossInfernoText.setVisible(false);
     }
   
 
@@ -3914,19 +4505,24 @@ const itemColor = it => {
   if (!it) return 0x1d2230; // 空の場合は背景色を返す
   if (it.slot === 'potion') return it.kind === 'full' ? 0xe53e3e : 0x38a169;
   if (it.slot === 'weapon') {
+    if (it.type === 'inferno_scythe') return 0xff5500;
     if (it.type === 'apocalypse') return 0xff1144;
     if (it.type === 'astral_orb') return 0x10b981; // エメラルド
     if (it.type === 'chronos_bow') return 0x3b82f6;
     if (it.isLegend || it.type === 'mubi') return 0x00ffff;
     return it.isBossItem ? 0xd98cff : 0xc9a24a;
   }
-  return isArtifact(it) ? 0xb15cff : (TIER_COLORS[it.tier] || 0x8a6a4a);
+  if (isArtifact(it)) {
+    return it.rarity === 'Legend' ? 0xffd36a : 0xb15cff; // Legend遺物は黄金色！
+  }
+  return TIER_COLORS[it.tier] || 0x8a6a4a;
 };
 const ITEM_SHORT_CODE = {
   apocalypse: 'Ap',
   astral_orb: 'As',
   chronos_bow: 'Ch',
-  spellbook: 'Sp'
+  spellbook: 'Sp',
+  inferno_scythe: 'In'
 };
 const itemChar = it => {
   if (!it) return ''; // 空の場合は文字なし
@@ -3948,7 +4544,17 @@ const itemChar = it => {
 const itemInfo = it => {
   if (!it) return '';
   if (it.slot === 'weapon') return `${it.name}${plus(it)}  攻撃力 ${it.atk}  スキル:${it.skill ? it.skill.name : 'なし'}`;
-  if (isArtifact(it)) return `${it.name} (${it.desc})`;
+  if (isArtifact(it)) {
+    // 既存のセーブデータにある遺物でも最新の awakeDesc を参照できるように補完
+    const def = ARTIFACT_LIST.find(a => a.typeKey === it.typeKey);
+    const awakeText = it.awakeDesc || (def && def.awakeDesc);
+    if (awakeText) {
+      const isAwakened = weapon && weapon.type === (it.motifFor || (def && def.motifFor));
+      const statusTag = isAwakened ? '【★覚醒発動中!】' : '【未覚醒】';
+      return `${it.name} (${it.desc})\n${statusTag} ${awakeText}`;
+    }
+    return `${it.name} (${it.desc})`;
+  }
   return armorLabel(it);
 };
 const slotItem = l => l.kind === 'pack' ? BACKPACK[l.key] : getEq(l.key);
@@ -3959,28 +4565,35 @@ const slotLayout = () => [
   { kind: 'eq', key: 'legs',   x: 520, y: 280 },
   { kind: 'eq', key: 'shoes',  x: 520, y: 350 },
   // 2列目 (右列): 武器 / 副武 / 遺物 / 大技
-  { kind: 'eq', key: 'weapon',     x: 640, y: 140 },
-  { kind: 'eq', key: 'sub_weapon', x: 640, y: 210 },
-  { kind: 'eq', key: 'artifact',   x: 640, y: 280 },
-  { kind: 'eq', key: 'exs',        x: 640, y: 350 }
+  { kind: 'eq', key: 'weapon',     x: 610, y: 140 },
+  { kind: 'eq', key: 'sub_weapon', x: 610, y: 210 },
+  { kind: 'eq', key: 'exs',        x: 610, y: 280 },
+  { kind: 'eq', key: 'artifact1',  x: 700, y: 140 },
+  { kind: 'eq', key: 'artifact2',  x: 700, y: 210 },
+  { kind: 'eq', key: 'artifact3',  x: 700, y: 280 }
 ];
 const drawSlots = (scene, slots, st) => {
-  const gr = scene.add.graphics().lineStyle(2, 0x596072, 1).fillStyle(0x1d2230, 1);
+  const unlocked = unlockedArtifactSlots();
+  const gr = scene.add.graphics();
   slots.forEach(s => {
+    const isLockedArt = (s.key === 'artifact2' && unlocked < 2) || (s.key === 'artifact3' && unlocked < 3);
     if (s.kind === 'eq' && s.key === 'exs') {
-      // 大技スロット専用の水色枠背景
       gr.lineStyle(2, 0x00ffff, 1).fillStyle(0x003344, 1);
+    } else if (isLockedArt) {
+      gr.lineStyle(2, 0x3b4254, 1).fillStyle(0x131620, 1);
     } else {
       gr.lineStyle(2, 0x596072, 1).fillStyle(0x1d2230, 1);
     }
-    gr.fillRect(s.x - 32, s.y - 32, 64, 64).strokeRect(s.x - 32, s.y - 32, 64, 64);
+    gr.fillRect(s.x - 30, s.y - 30, 60, 60).strokeRect(s.x - 30, s.y - 30, 60, 60);
   });
 
   const labels = [
     { text: '兜', x: 520, y: 105 }, { text: '胸', x: 520, y: 175 },
     { text: '脚', x: 520, y: 245 }, { text: '靴', x: 520, y: 315 },
-    { text: '武器', x: 640, y: 105 }, { text: '副武', x: 640, y: 175 },
-    { text: '遺物', x: 640, y: 245 }, { text: '大技', x: 640, y: 315 }
+    { text: '武器', x: 610, y: 105 }, { text: '副武', x: 610, y: 175 },
+    { text: '大技', x: 610, y: 245 }, { text: '遺物1', x: 700, y: 105 },
+    { text: unlocked >= 2 ? '遺物2' : '🔒100F', x: 700, y: 175 },
+    { text: unlocked >= 3 ? '遺物3' : '🔒250F', x: 700, y: 245 }
   ];
   labels.forEach(l => scene.add.text(l.x, l.y, l.text, { ...st, fontSize: '12px', color: '#a0a7b8' }).setOrigin(0.5));
 };
@@ -4037,8 +4650,8 @@ class BackpackScene extends MenuScene {
     this.slots = slotLayout();
     drawSlots(this, this.slots, st);
     this.head = this.add.text(60, 40, '', st);
-    this.infoText = this.add.text(60, 398, '', { ...st, wordWrap: { width: 400 } });
-    this.noteText = this.add.text(60, 478, '', { ...st, color: '#ff9a8a' });
+    this.infoText = this.add.text(60, 392, '', { ...st, wordWrap: { width: 680 }, lineSpacing: 4 });
+    this.noteText = this.add.text(60, 482, '', { ...st, color: '#ff9a8a' });
     this.add.text(w / 2, 515, 'ドラッグで装備操作 / 大技枠クリックでセットExSを切り替え / Esc・I で閉じる', { ...st, color: '#a0a7b8' }).setOrigin(0.5);
     this.items = [];
     this.input.on('drag', (p, o, x, y) => o.setPosition(x, y));
@@ -4069,8 +4682,11 @@ class BackpackScene extends MenuScene {
   render() {
     this.items.forEach(o => o.destroy()); this.items = [];
     const a = armorStats();
-    this.head.setText(`バッグ    防具:最大HP+${a.hp}  軽減${(a.red * 100).toFixed(1)}%`);
-    this.infoText.setText(''); 
+    const syns = activeSynergies();
+    const synHeader = syns.length > 0 ? `  ✦共鳴: ${syns.map(s => s.name).join(' ')}` : '';
+    const defaultInfo = syns.length > 0 ? syns.map(s => `${s.name} ${s.desc}`) : '';
+    this.head.setText(`バッグ    防具:最大HP+${a.hp}  軽減${(a.red * 100).toFixed(1)}%${synHeader}`);
+    this.infoText.setText(defaultInfo); 
     
     this.slots.forEach(s => {
       const it = this.get(s);
@@ -4105,12 +4721,11 @@ class BackpackScene extends MenuScene {
         c.on('dragstart', () => c.setDepth(10));
       }
       
-      c.on('pointerout', () => this.infoText.setText(''));
+      c.on('pointerout', () => this.infoText.setText(defaultInfo));
       this.items.push(c);
     });
   }
 
-  // 大技スロットクリック時の所持ExS切り替え
   // 大技スロットクリック時の所持ExS切り替え
   cycleExs() {
     if (isRestrictedLegend(weapon)) {
@@ -4151,14 +4766,26 @@ class BackpackScene extends MenuScene {
     if (isLegendEquipped && (dst.key === 'sub_weapon' || src.key === 'sub_weapon')) {
       return this.noteText.setText(`「${weapon.name}」を装備中は副武器を装備できません`);
     }
-
+    const unlocked = unlockedArtifactSlots();
+    if ((dst.key === 'artifact2' && unlocked < 2) || (dst.key === 'artifact3' && unlocked < 3)) {
+      return this.noteText.setText(dst.key === 'artifact2' ? '遺物2は100F突破で解放されます' : '遺物3は250F突破で解放されます');
+    }
     const fits = (l, it) => {
       if (!it || l.kind === 'pack') return true;
       if (l.key === 'weapon' || l.key === 'sub_weapon') return it.slot === 'weapon';
+      if (l.key.startsWith('artifact')) return it.slot === 'artifact';
       return it.slot === l.key;
     };
 
     if (!fits(dst, a) || !fits(src, b)) return this.noteText.setText('その部位には装備できません');
+
+    // 同じ種類の遺物を複数枠に重複装備するのを防止
+    // 同じ種類の遺物を複数枠に重複装備するのを防止
+    if (a && isArtifact(a) && dst.kind === 'eq' && dst.key.startsWith('artifact')) {
+      const otherIdx = Number(dst.key.replace('artifact', '')) - 1;
+      const dup = ARTIFACTS.some((eq, idx) => idx !== otherIdx && eq && eq.typeKey === a.typeKey);
+      if (dup) return this.noteText.setText('同じ種類の遺物は同時に複数装備できません');
+    }
     if (src.kind === 'eq' && src.key === 'weapon' && !b) return this.noteText.setText('メイン武器は外せません。別の武器と入れ替えてください');
 
     this.set(src, b); 
@@ -4271,36 +4898,237 @@ class StorageScene extends MenuScene {
   constructor() { super('storage'); }
 
   create() {
-    const w = this.scale.width, h = this.scale.height, st = { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#e8eaf0' };
-    this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.75);
-    this.add.text(40, 84, 'バッグ(クリックで倉庫へ)', st);
-    this.add.text(440, 84, '倉庫(クリックでバッグへ)', st);
-    drawPackFrames(this, 40); drawPackFrames(this, 440);
-    this.info = this.add.text(40, 380, '', { ...st, wordWrap: { width: 720 } });
-    this.note = this.add.text(40, 430, '', { ...st, color: '#ff9a8a' });
+    const w = this.scale.width, h = this.scale.height;
+    const st = { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#e8eaf0' };
+    this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.78);
+
+    this.goldText = this.add.text(40, 14, '', { ...st, color: '#ffd36a', fontWeight: 'bold' });
+    this.add.text(40, 42, 'バッグ (左クリック:倉庫へ / 右クリック:売却)', { ...st, fontSize: '13px' });
+    this.storageTitle = this.add.text(430, 42, '', { ...st, fontSize: '13px' });
+
+    // バッグ枠（固定4行）を描画（アイコン描画位置と完全に一致）
+    drawPackFrames(this, 40);
+
+    // 倉庫のスクロール表示領域（4行分ぴったり表示・はみ出た分はスクロール）
+    this.viewX = 430;
+    this.viewY = 104;
+    this.viewW = 340;
+    this.viewH = 266; // 66px × 4行 + 余白2px
+    this.scrollY = 0;
+
+    // 倉庫エリアの枠背景とマスク設定
+    this.add.rectangle(this.viewX + this.viewW / 2, this.viewY + this.viewH / 2, this.viewW + 8, this.viewH + 8, 0x131620, 0.7)
+      .setStrokeStyle(1, 0x3b4254);
+
+    const maskShape = this.make.graphics();
+    maskShape.fillStyle(0xffffff);
+    maskShape.fillRect(this.viewX - 4, this.viewY - 4, this.viewW + 8, this.viewH + 8);
+    this.storageMask = maskShape.createGeometryMask();
+
+    // スクロール可能なコンテナ（枠線とアイコンを両方ここに入れる）
+    this.storageContainer = this.add.container(0, 0);
+    this.storageContainer.setMask(this.storageMask);
+
+    // スクロールバー
+    const trackX = this.viewX + this.viewW + 10;
+    this.scrollTrack = this.add.line(0, 0, trackX, this.viewY, trackX, this.viewY + this.viewH, 0x3b4254).setOrigin(0, 0);
+    this.scrollThumb = this.add.rectangle(trackX, this.viewY, 6, 40, 0x6fb6ff).setOrigin(0.5, 0);
+
+    this.info = this.add.text(40, 415, '', { ...st, wordWrap: { width: 420 } });
+    this.note = this.add.text(40, 470, '', { ...st, color: '#7cf0a0' });
     this.items = [];
+    this.hoverTarget = null;
+
+    // ブラウザの右クリックメニュー防止＆キー操作
+    this.input.mouse.disableContextMenu();
+    this.game.canvas.oncontextmenu = e => e.preventDefault();
     this.input.keyboard.addKey('ESC').on('down', () => this.close());
+    this.input.keyboard.addKey('S').on('down', () => {
+      if (this.hoverTarget) this.sellDirect(this.hoverTarget.list, this.hoverTarget.idx);
+    });
+
+    // マウスホイールで倉庫をスクロール
+    this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY) => {
+      if (pointer.x >= this.viewX - 10) {
+        this.applyScroll(this.scrollY - deltaY * 0.5);
+      }
+    });
+
+    // ドラッグでもスクロール可能にする（少し動かしたらスクロール判定）
+    let dragStartY = 0, startScrollY = 0, isDraggingScroll = false;
+    this.input.on('pointerdown', pointer => {
+      if (pointer.x >= this.viewX && pointer.x <= this.viewX + this.viewW &&
+          pointer.y >= this.viewY && pointer.y <= this.viewY + this.viewH) {
+        dragStartY = pointer.y;
+        startScrollY = this.scrollY;
+        isDraggingScroll = true;
+        this.didScrollDrag = false;
+      }
+    });
+    this.input.on('pointermove', pointer => {
+      if (isDraggingScroll && pointer.isDown) {
+        const dy = pointer.y - dragStartY;
+        if (Math.abs(dy) > 6) this.didScrollDrag = true;
+        if (this.didScrollDrag) this.applyScroll(startScrollY + dy);
+      }
+    });
+    this.input.on('pointerup', () => { isDraggingScroll = false; });
+
     this.render();
+  }
+
+  // スクロール位置の制限とスクロールバー更新
+  applyScroll(newY) {
+    const rows = Math.ceil(STORAGE.length / PACK_COLS);
+    const contentH = rows * 66;
+    const maxScroll = Math.max(0, contentH - this.viewH);
+
+    this.scrollY = Phaser.Math.Clamp(newY, -maxScroll, 0);
+    this.storageContainer.y = this.scrollY;
+
+    if (maxScroll > 0) {
+      const thumbH = Math.max(24, (this.viewH / contentH) * this.viewH);
+      const progress = -this.scrollY / maxScroll;
+      this.scrollThumb.height = thumbH;
+      this.scrollThumb.y = this.viewY + progress * (this.viewH - thumbH);
+      this.scrollTrack.setVisible(true);
+      this.scrollThumb.setVisible(true);
+    } else {
+      this.scrollTrack.setVisible(false);
+      this.scrollThumb.setVisible(false);
+    }
+  }
+
+  // 倉庫のセル座標（常に原寸64×64で配置）
+  storageCell(i) {
+    return {
+      x: this.viewX + 34 + (i % PACK_COLS) * 66,
+      y: this.viewY + 34 + Math.floor(i / PACK_COLS) * 66
+    };
   }
 
   render() {
-    this.items.forEach(o => o.destroy()); this.items = [];
-    [[BACKPACK, 40], [STORAGE, 440]].forEach(([list, ox]) => list.forEach((it, i) => {
+    this.items.forEach(o => o.destroy());
+    this.items = [];
+    this.storageContainer.removeAll(true);
+
+    this.goldText.setText(`所持金: ${PLAYER.gold.toLocaleString()}G`);
+    this.storageTitle.setText(`倉庫 ${STORAGE.length}/${STORAGE_MAX}枠 (ホイールでスクロール)`);
+
+    // 1. バッグ側のアイテム描画（枠線とぴったり重ねる）
+    BACKPACK.forEach((it, i) => {
       if (!it) return;
-      const p = packCell(ox, i), c = makeIcon(this, it, p.x, p.y).setSize(56, 56).setInteractive();
-      c.on('pointerdown', () => this.time.delayedCall(0, () => this.move(list, i)));
-      c.on('pointerover', () => this.info.setText([itemInfo(it), durLabel(it)]));
-      c.on('pointerout', () => this.info.setText(''));
+      const p = packCell(40, i);
+      const c = makeIcon(this, it, p.x, p.y).setSize(56, 56).setInteractive();
+      this.bindItemEvents(c, BACKPACK, i, it, false);
       this.items.push(c);
-    }));
-    this.btn(400, 480, '閉じる', () => this.close());
+    });
+
+    // 2. 倉庫側の枠線（原寸64×64）をコンテナ内に描画
+    const frameGfx = this.add.graphics().lineStyle(2, 0x596072, 1).fillStyle(0x1d2230, 1);
+    STORAGE.forEach((_, i) => {
+      const c = this.storageCell(i);
+      frameGfx.fillRect(c.x - 32, c.y - 32, 64, 64).strokeRect(c.x - 32, c.y - 32, 64, 64);
+    });
+    this.storageContainer.add(frameGfx);
+
+    // 3. 倉庫側のアイテムアイコン（縮小なし・原寸）をコンテナ内に描画
+    STORAGE.forEach((it, i) => {
+      if (!it) return;
+      const p = this.storageCell(i);
+      const c = makeIcon(this, it, p.x, p.y).setSize(56, 56).setInteractive();
+      this.bindItemEvents(c, STORAGE, i, it, true);
+      this.storageContainer.add(c);
+    });
+
+    this.applyScroll(this.scrollY);
+
+    // 倉庫拡張ボタン
+    if (STORAGE.length < STORAGE_MAX) {
+      const cost = storageExpandCost();
+      const canBuy = PLAYER.gold >= cost;
+      this.btn(620, 445, `倉庫拡張 +5枠 (${cost.toLocaleString()}G)`, () => this.expandStorage(), canBuy);
+    } else {
+      this.btn(620, 445, '倉庫拡張 MAX', null, false);
+    }
+
+    this.btn(620, 495, '閉じる (ESC)', () => this.close());
+  }
+
+  bindItemEvents(c, list, i, it, isStorage) {
+    c.on('pointerup', (pointer) => {
+      // スクロールドラッグ直後はクリック誤爆を防ぐ
+      if (isStorage && this.didScrollDrag) return;
+      // マスク領域外（見切れている部分）のクリックを無効化
+      if (isStorage && (pointer.y < this.viewY || pointer.y > this.viewY + this.viewH)) return;
+
+      this.time.delayedCall(0, () => {
+        if (pointer.button === 2) {
+          this.sellDirect(list, i);
+        } else if (pointer.button === 0) {
+          this.move(list, i);
+        }
+      });
+    });
+
+    c.on('pointerover', (pointer) => {
+      if (isStorage && (pointer.y < this.viewY || pointer.y > this.viewY + this.viewH)) return;
+      this.hoverTarget = { list, idx: i };
+      this.info.setText([
+        itemInfo(it),
+        `${durLabel(it)}  【売値: ${sellPrice(it).toLocaleString()}G】 (右クリックまたは[S]で即売却)`
+      ]);
+    });
+
+    c.on('pointerout', () => {
+      if (this.hoverTarget && this.hoverTarget.list === list && this.hoverTarget.idx === i) {
+        this.hoverTarget = null;
+      }
+      this.info.setText('');
+    });
   }
 
   move(list, i) {
-    const other = list === BACKPACK ? STORAGE : BACKPACK, j = other.indexOf(null);
-    if (j < 0) this.note.setText('移動先に空きがありません');
-    else { other[j] = list[i]; list[i] = null; this.note.setText(''); saveGame();}
+    const other = list === BACKPACK ? STORAGE : BACKPACK;
+    const j = other.indexOf(null);
+    if (j < 0) {
+      this.note.setColor('#ff9a8a').setText('移動先に空きがありません');
+    } else {
+      other[j] = list[i];
+      list[i] = null;
+      this.note.setText('');
+      saveGame();
+    }
     this.render();
+  }
+
+  sellDirect(list, i) {
+    const it = list[i];
+    if (!it) return;
+    const price = sellPrice(it);
+    const name = it.label || it.name || 'アイテム';
+    list[i] = null;
+    PLAYER.gold += price;
+    this.hoverTarget = null;
+    this.info.setText('');
+    this.note.setColor('#ffd36a').setText(`「${name}」を ${price.toLocaleString()}G で直接売却しました！`);
+    saveGame();
+    this.render();
+  }
+
+  expandStorage() {
+    if (STORAGE.length >= STORAGE_MAX) return;
+    const cost = storageExpandCost();
+    if (!spendGold(cost)) {
+      this.note.setColor('#ff9a8a').setText('ゴールドが足りません');
+      return;
+    }
+    for (let k = 0; k < PACK_COLS; k++) STORAGE.push(null);
+    this.note.setColor('#7cf0a0').setText(`倉庫を5枠拡張しました！（現在 ${STORAGE.length}枠）`);
+    saveGame();
+    // 拡張した行が見えるように一番下へ自動スクロール
+    this.render();
+    this.applyScroll(-9999);
   }
 }
 
@@ -4642,7 +5470,8 @@ class ExsGachaScene extends MenuScene {
         { type: 'chronos_bow', label: '✦✦✦ 時空降臨！ [Legend] クロノス・ボウ ✦✦✦', color: '#60a5fa' },
         { type: 'apocalypse',  label: '✦✦✦ 終焉降臨！ [Legend] アポカリプス ✦✦✦', color: '#ff3366' },
         { type: 'astral_orb',  label: '✦✦✦ 超激レア排出！ [Legend] アストラル・オーブ ✦✦✦', color: '#34d399' },
-        { type: 'mubi',        label: '✦✦✦ 超激レア排出！ [Legend] 無尾 ✦✦✦', color: '#00ffff' }
+        { type: 'mubi',        label: '✦✦✦ 超激レア排出！ [Legend] 無尾 ✦✦✦', color: '#00ffff' },
+        { type: 'inferno_scythe', label: '✦✦✦ 煉獄降臨！ [Legend] インフェルノ・サイズ ✦✦✦', color: '#ff6600' }
       ];
 
       // 4種類の中から完全に均等（25%ずつ）に1つ抽選
@@ -4697,10 +5526,98 @@ class ExsGachaScene extends MenuScene {
     this.render();
   }
 }
+// 【差し替え】MotifGachaScene クラス全体
+class MotifGachaScene extends MenuScene {
+  constructor() { super('motif_gacha'); }
+
+  create() {
+    const w = this.scale.width, h = this.scale.height;
+    const st = { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#e8eaf0' };
+
+    this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.85);
+
+    this.add.text(w / 2, 45, '✦ 神器錬成（遺物＆モチーフガチャ） ✦', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '21px', color: '#ffd36a', fontWeight: 'bold'
+    }).setOrigin(0.5);
+
+    this.headText = this.add.text(w / 2, 85, '', { ...st, color: '#ffd36a' }).setOrigin(0.5);
+    this.infoText = this.add.text(w / 2, 135, '1回 10000G で遺物を錬成！（30%で [Legend] モチーフ遺物 / 70%で通常遺物）', st).setOrigin(0.5);
+
+    const lineup = [
+      '【Legend (30%)】蒼焔の狐面 / 終末の黙示録 / 星界の天球儀 / クロノスの懐中時計',
+      '【通常遺物 (70%)】血塗られた短剣 / ガラスの聖杯 / 巨神の心臓 / 守護者の盾紋章 ほか全10種'
+    ];
+    this.add.text(w / 2, 178, lineup.join('\n'), { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#a0a7b8', align: 'center' }).setOrigin(0.5);
+
+    this.resultText = this.add.text(w / 2, 245, '', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '19px', color: '#ffd36a', fontWeight: 'bold'
+    }).setOrigin(0.5);
+
+    this.descText = this.add.text(w / 2, 290, '', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#e8eaf0', wordWrap: { width: 540 }, align: 'center'
+    }).setOrigin(0.5);
+
+    this.noteText = this.add.text(w / 2, 335, '', { ...st, color: '#ff9a8a' }).setOrigin(0.5);
+
+    this.items = [];
+    this.input.keyboard.addKey('ESC').on('down', () => this.close());
+    this.render();
+  }
+
+  render() {
+    this.items.forEach(o => o.destroy());
+    this.items = [];
+    const w = this.scale.width;
+
+    this.headText.setText(`所持金: ${PLAYER.gold} G`);
+    this.btn(w / 2 - 120, 395, '1回引く (10000G)', () => this.drawMotif(), PLAYER.gold >= 10000);
+    this.btn(w / 2 + 120, 395, '閉じる (ESC)', () => this.close());
+  }
+
+  drawMotif() {
+    const cost = 10000;
+    if (!spendGold(cost)) {
+      this.noteText.setText('ゴールドが足りません！');
+      this.render();
+      return;
+    }
+
+    this.noteText.setText('');
+
+    // 30%でLegendモチーフ遺物、70%で通常遺物（全10種）を抽選
+    const isLegendPick = Math.random() < 0.30;
+    let artItem = null;
+
+    if (isLegendPick) {
+      const motifKeys = ['motif_mubi', 'motif_apo', 'motif_astral', 'motif_chronos'];
+      const chosenKey = motifKeys[Math.floor(Math.random() * motifKeys.length)];
+      artItem = rollLegendArtifact(chosenKey);
+    } else {
+      artItem = rollArtifact();
+    }
+
+    if (artItem && addToPack(artItem)) {
+      saveGame();
+      if (isLegendPick) {
+        this.resultText.setText(`✦✦✦ 神器降臨！ [Legend] ${artItem.name} ✦✦✦`).setColor('#ffd36a');
+      } else {
+        this.resultText.setText(`✦ 排出: [遺物] ${artItem.name}`).setColor('#d98cff');
+      }
+      this.descText.setText(`${artItem.desc}\n（Iキーのバッグ画面から遺物スロットに装備できます）`);
+    } else {
+      PLAYER.gold += cost;
+      this.resultText.setText(`✦ ${artItem.name} が当選しました！`).setColor('#ff4444');
+      this.descText.setText('ですがバッグが満杯のため入手できませんでした（5000Gは返金されました）。');
+      this.noteText.setText('バッグに空きを作ってから再度お試しください。');
+    }
+
+    this.render();
+  }
+}
 new Phaser.Game({
   type: Phaser.AUTO, parent: 'game', width: 800, height: 540, backgroundColor: '#0b0d12',
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_HORIZONTALLY },
-  scene: [Main, HudScene, PauseScene, StatScene, BackpackScene, BlacksmithScene, ShopScene, InnScene, StorageScene, GrimoireScene, PatchNotesScene, ExsGachaScene]
+  scene: [Main, HudScene, PauseScene, StatScene, BackpackScene, BlacksmithScene, ShopScene, InnScene, StorageScene, GrimoireScene, PatchNotesScene, ExsGachaScene, MotifGachaScene]
 });
 </script>
 </body>
