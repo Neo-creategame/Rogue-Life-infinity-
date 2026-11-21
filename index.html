@@ -3475,8 +3475,8 @@ class Main extends Phaser.Scene {
     const o = this.add.rectangle(p.x, p.y, 14, 4, color).setRotation(a).setDepth(2);
     this.arrows.push({ 
       o, 
-      vx: Math.cos(a) * weapon.speed, 
-      vy: Math.sin(a) * weapon.speed, 
+      vx: Math.cos(a) * spd, 
+      vy: Math.sin(a) * spd, 
       left: weapon.range, 
       dmg,
       color,
