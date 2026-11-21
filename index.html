@@ -2348,12 +2348,12 @@ class Main extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.stock1)) this.castSpellbookSkill(0);
     if (Phaser.Input.Keyboard.JustDown(k.stock2)) this.castSpellbookSkill(1);
     if (Phaser.Input.Keyboard.JustDown(k.stock3)) this.castSpellbookSkill(2);
-    if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();*/
+    if (Phaser.Input.Keyboard.JustDown(k.getSpellbook)) this.obtainSpellbook();
     if (Phaser.Input.Keyboard.JustDown(k.warp60) && !this.leaving) {
       SAVE.cleared = Math.max(SAVE.cleared, 200);
       saveGame();
       this.travel(60, maxHp(), 'デバッグ: 400Fへワープしました');
-    }
+    }*/
     if (Phaser.Input.Keyboard.JustDown(k.exs)) this.castExS();//exs
 
     if (Phaser.Input.Keyboard.JustDown(k.subSkill)) this.subSkill();
