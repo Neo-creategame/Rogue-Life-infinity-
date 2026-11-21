@@ -87,7 +87,7 @@ const TOWN_SHOPS = [
 // ---- セーブ＆ロード機能 ----
 const SAVE_KEY = 'alone_rpg_save_data_v1';
 // バージョン管理と更新履歴
-const GAME_VERSION = '2.4.4'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
+const GAME_VERSION = '2.4.5'; // アップデートごとにここを更新する（例: 1.2.0 -> 1.3.0）
 const VERSION_KEY = 'alone_rpg_seen_version';
 /*'✦ Ver 2..0 アップデート情報 ✦',
   '',
@@ -95,7 +95,7 @@ const VERSION_KEY = 'alone_rpg_seen_version';
   '・',
   '',*/
 const PATCH_NOTES = [
-  'ver2.4.4',
+  'ver2.4.5',
   '✦ Ver 2.4.0 アップデート情報 ✦',
   '',
   '【新要素】',
@@ -3470,6 +3470,7 @@ class Main extends Phaser.Scene {
   shoot(a, dmg, color = 0xe9d8a6, opts = {}) {
     const p = this.p;
     const spd = (weapon && weapon.speed) || 550;
+    const rng = (weapon && weapon.range) || 450;
     
     // ★ 1. 手元で弾けるマズルフラッシュ
     this.muzzleFlash(p.x, p.y, a, color);
@@ -3480,7 +3481,7 @@ class Main extends Phaser.Scene {
       o, 
       vx: Math.cos(a) * spd, 
       vy: Math.sin(a) * spd, 
-      left: weapon.range, 
+      left: rng, 
       dmg,
       color,
       lastTrail: 0, // トレイル生成間隔用
